@@ -1,0 +1,19 @@
+{
+  "name": "pos_backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ফার্মেসি ও কসমেটিক্স দোকানের POS — ব্যাকএন্ড API (Node.js + PostgreSQL)",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "migrate": "node scripts/migrate.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "pg": "^8.13.0"
+  }
+}
