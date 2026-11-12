@@ -1,56 +1,67 @@
 # pos_backend
 
-ফার্মেসি ও কসমেটিক্স দোকানের POS — ব্যাকএন্ড API (Node.js + PostgreSQL)। ফ্রন্টএন্ড: `pos_fontend` (Next.js PWA)।
-প্রোডাক্টের সিদ্ধান্ত ও রিকোয়ারমেন্টের মূল উৎস হলো PRD ডক।
+ফার্মেসি ও কসমেটিক্স দোকানের POS এর ব্যাকএন্ড API। **TypeScript**, ডাটাবেস **Supabase PostgreSQL**, API চলে **Supabase Edge Function** হিসেবে (লোকালে সাধারণ Node সার্ভার হিসেবেও চলে)।
 
-## চালানো
+কাঠামো `Banglar_Biriyani_backend` এর মতো: `edge/` বান্ডেল, Deno স্মোক টেস্ট, GitHub Actions CI + অটো-ডিপ্লয়, `.bat` সহায়ক স্ক্রিপ্ট।
 
-```bash
-npm install
-cp .env.example .env        # JWT_SECRET ও ডাটাবেস ইউজার বসান
-npm run migrate             # db/migrations/*.sql চালায়
-npm start
-npm test                    # ডাটাবেস ছাড়াই চলে (node --test)
-```
-
-ডাটাবেসে দুটি রোল রাখুন: `pos_owner` (টেবিলের মালিক, শুধু মাইগ্রেশনে) আর `pos_app` (অ্যাপ চলে এটা দিয়ে)।
-RLS শুধু মালিক নয় এমন রোলের ওপর কাজ করে, তাই অ্যাপ কখনো `pos_owner` দিয়ে চালাবেন না।
-
-```sql
-CREATE ROLE pos_owner LOGIN PASSWORD '...';
-CREATE ROLE pos_app   LOGIN PASSWORD '...';
-CREATE DATABASE pos OWNER pos_owner;
-```
-
-## কাঠামো
+## ফোল্ডার
 
 | পথ | কাজ |
 |---|---|
-| `db/migrations/001_init.sql` | স্কিমা + RLS + append-only ট্রিগার |
-| `src/domain/` | খাঁটি ব্যবসায়িক নিয়ম, ডাটাবেস ছাড়া: টাকা (পয়সা), কার্টন→পিস, মেয়াদ, FIFO, বিলের হিসাব, ফোন |
-| `src/auth/` | scrypt পাসওয়ার্ড, HS256 টোকেন (বাইরের লাইব্রেরি ছাড়া) |
-| `src/http/app.js` | রাউট: দোকান খোলা, লগইন, /me, স্টাফ |
-| `src/repo/memory.js` | টেস্টের ইন-মেমরি রিপোজিটরি |
-| `src/repo/pg.js` | PostgreSQL রিপোজিটরি (প্রতি রিকোয়েস্টে `app.store_id` সেট করে) |
+| `server/app.ts` | পুরো API (Web-standard `Request → Response`; Node ও Deno দুটোতেই একই কোড) |
+| `server/index.ts` | লোকাল Node সার্ভার (`npm run dev`) |
+| `server/config.ts` | পরিবেশ-চলক থেকে app বানায় |
+| `src/domain/` | টাকা (পয়সা), ইউনিট, মেয়াদ, FIFO, বিল/পেমেন্ট, ফোন — বিশুদ্ধ ফাংশন |
+| `src/auth/` | scrypt পাসওয়ার্ড, HS256 JWT, লগইন-ব্যর্থতার সীমা |
+| `src/db/` | `types.ts` (ইন্টারফেস), `pg.ts` (Supabase/postgres.js), `memory.ts` (টেস্ট) |
+| `db/migrations/` | SQL স্কিমা (RLS, `pos_app` রোল, অনুমতি) |
+| `edge/` | `build.mjs` (esbuild বান্ডেল), `entry.ts`, `smoke-test.mjs` (Deno) |
+| `supabase/` | `config.toml`, `functions/api/index.ts` (Edge এন্ট্রি) |
+| `tests/unit/` | vitest ইউনিট টেস্ট (ডাটাবেস লাগে না) |
 
-## API (এখন পর্যন্ত)
+## URL
 
-- `POST /v1/auth/register-store` `{ storeName, storeKind, ownerName, phone, password }` → `201 { token, user }`
-- `POST /v1/auth/login` `{ phone, password }` → `{ token, user }` (৫ বার ভুলে ১৫ মিনিট আটকায়)
-- `GET /v1/me` → `{ user, store }`
-- `GET /v1/staff`, `POST /v1/staff`, `PATCH /v1/staff/:id { active }` — শুধু মালিক
+- লোকাল: `http://localhost:3001/api/...`
+- লাইভ: `https://<PROJECT_REF>.supabase.co/functions/v1/api/...`
 
+রুট (প্রিফিক্স `/api`): `GET /health`, `POST /v1/auth/register-store`, `POST /v1/auth/login`, `GET /v1/me`, `GET|POST /v1/staff`, `PATCH /v1/staff/:id`।
+লগইন টোকেন `Authorization: Bearer <token>` হেডারে যায় (কুকি নয় — অফলাইন PWA এর জন্য)।
 ত্রুটির আকার: `{ "error": { "code", "message", "details" } }`, বার্তা বাংলায়।
 
-## নিয়ম (ভাঙবেন না)
+## প্রথমবার সেটআপ (Supabase)
 
-- টাকা কোডে সবসময় পয়সা (পূর্ণসংখ্যা); ডাটাবেসে `numeric(12,2)`।
-- স্টক সবসময় পিসে; `stock_movements` ও `due_ledger` শুধু যোগ হয়।
-- প্রতিটি দোকান-সংক্রান্ত কোয়েরি `withStore()` এর ভেতরে চলবে।
-- বিক্রি/মুভমেন্টের `id` ক্লায়েন্ট বানায় (UUID) — অফলাইন সিংক ইডেমপোটেন্ট রাখতে।
+1. Supabase এ প্রজেক্ট বানান। **Project ID** (`Project Settings → General`) আর **Database password** হাতে রাখুন।
+2. `.env.example` কপি করে `.env` বানান:
+   - `DATABASE_URL_UNPOOLED` = *Connect → Session pooler* স্ট্রিং, ইউজার `postgres.<ref>`
+   - `POS_APP_PASSWORD` = নিজের বানানো ১৬+ অক্ষরের পাসওয়ার্ড
+   - `DATABASE_URL` = *Transaction pooler* (6543) স্ট্রিং, কিন্তু ইউজার **`pos_app.<ref>`** আর পাসওয়ার্ড `POS_APP_PASSWORD`
+   - `JWT_SECRET` = `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`
+3. `db-migrate.bat` ডাবল-ক্লিক → টেবিল, RLS, `pos_app` রোল তৈরি।
+4. `deploy-supabase.bat` ডাবল-ক্লিক → Edge secrets বসিয়ে `api` ফাংশন ডিপ্লয়। শেষে `/health` পরীক্ষা করে।
+5. (অটো-ডিপ্লয়) GitHub repo → *Settings → Secrets and variables → Actions* এ `SUPABASE_ACCESS_TOKEN` যোগ করুন
+   (Supabase → Account → Access Tokens)। এরপর `main` এ push করলেই টেস্ট → Deno বিল্ড → ডিপ্লয় → `/health` যাচাই চলবে।
 
-## অবস্থা
+> গোপন তথ্য (পাসওয়ার্ড, JWT_SECRET, access token) কখনো GitHub বা চ্যাটে দেবেন না। শুধু Project ID গোপন নয়।
 
-- ✅ `npm test` পাস (ডোমেইন, অথ, HTTP — ইন-মেমরি রিপোজিটরিতে)।
-- ⚠️ `001_init.sql` ও `src/repo/pg.js` আসল PostgreSQL এ এখনো চালানো হয়নি। প্রথমবার চালিয়ে দেখুন।
-- ⏭️ পরের ধাপ: পণ্য ও স্টক এন্ট্রি API, বিক্রি (`/v1/sales` সিংক), বাকির খাতা।
+## কেন `pos_app` রোল?
+
+Supabase এর `postgres` রোল Row Level Security **এড়িয়ে যায়**। এক দোকানের ডেটা অন্য দোকান থেকে আলাদা রাখার মূল ব্যবস্থা RLS, তাই API সবসময় `pos_app` (NOBYPASSRLS) দিয়ে সংযোগ করে। প্রতিটি অনুরোধ একটি ট্রানজ্যাকশনে `set_config('app.store_id', …, true)` বসায়, ফলে Transaction pooler এও নিরাপদ। মাইগ্রেশন `anon`/`authenticated` রোলের সব অনুমতি তুলে নেয় (আমরা Supabase Data API ব্যবহার করি না)।
+
+## লোকালে চালানো
+
+```
+npm install
+npm run dev          # http://localhost:3001/api/health
+npm test             # ইউনিট টেস্ট
+npm run typecheck
+node edge/build.mjs  # Edge বান্ডেল (supabase/functions/api/app.bundle.js)
+```
+
+`npm install` প্রথমবার `package-lock.json` বানাবে — সেটি commit করে দিলে ভালো।
+
+## যা এখনও আসল পরিবেশে যাচাই হয়নি
+
+- `src/db/pg.ts` ও SQL মাইগ্রেশন আসল Supabase/PostgreSQL এর বিরুদ্ধে চালানো হয়নি (টেস্ট ইন-মেমরি রিপোজিটরি দিয়ে)।
+- Deno তে scrypt/বান্ডেল: CI এর `supabase-edge` জব `edge/smoke-test.mjs` দিয়ে এটি যাচাই করে। scrypt (N=16384) Edge এর CPU সীমায় ধীর হলে প্যারামিটার কমাতে হতে পারে।
+- লগইন-সীমা মেমরিতে (প্রতি Edge instance এ আলাদা) — পরে ডাটাবেস টেবিলে সরানো হবে।
+- Supabase ফ্রি প্ল্যানে ১ সপ্তাহ অব্যবহৃত থাকলে প্রজেক্ট pause হয় এবং ব্যাকআপ নেই — আসল দোকানের আগে Pro প্ল্যান ভাবুন।

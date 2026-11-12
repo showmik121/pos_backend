@@ -1,0 +1,128 @@
+# প্রতিটি push (যেকোনো branch) ও pull request এ চলে। হাতে চালাতে: Actions ট্যাব -> CI -> "Run workflow"।
+# main এ push হলে সব যাচাই পাস করার পর API নিজে থেকে Supabase এ ডিপ্লয় হয়।
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# একই branch এ নতুন push এলে পুরনো, চলতে থাকা যাচাই বাতিল হয়।
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Type check & unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Unit tests (no database needed)
+        run: npm run test:unit
+
+  supabase-edge:
+    name: Supabase Edge Function build (Deno)
+    runs-on: ubuntu-latest
+    needs: test
+    env:
+      # প্লেসহোল্ডার: এই যাচাই ডাটাবেস ছোঁয় না।
+      DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+      JWT_SECRET: ci-only-jwt-secret-not-used-anywhere-else
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build the Edge Function bundle
+        run: node edge/build.mjs
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Run the bundle in Deno
+        run: deno run -A edge/smoke-test.mjs
+
+  deploy:
+    name: Deploy API to Supabase
+    runs-on: ubuntu-latest
+    # শুধু main এ push হলে, এবং টেস্ট ও Edge বিল্ড পাস করার পর।
+    needs: [test, supabase-edge]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # নতুন push অর্ধেক ডিপ্লয় বাতিল না করে অপেক্ষা করে।
+    concurrency:
+      group: deploy-supabase
+      cancel-in-progress: false
+    env:
+      # Settings -> Secrets and variables -> Actions এ SUPABASE_ACCESS_TOKEN যোগ করুন।
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - name: Skip notice
+        if: env.SUPABASE_ACCESS_TOKEN == ''
+        run: echo "SUPABASE_ACCESS_TOKEN secret সেট নেই, তাই অটো-ডিপ্লয় বাদ গেল।"
+
+      - uses: actions/checkout@v4
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+
+      - uses: actions/setup-node@v4
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        run: npm install --no-audit --no-fund
+
+      - name: Build the Edge Function bundle
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        run: node edge/build.mjs
+
+      - name: Deploy the "api" function
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        run: |
+          PROJECT_REF="$(tr -d '[:space:]' < supabase-project-id.txt)"
+          if [ "$PROJECT_REF" = "REPLACE_WITH_SUPABASE_PROJECT_REF" ] || [ -z "$PROJECT_REF" ]; then
+            echo "::error title=Supabase deploy::supabase-project-id.txt এ আসল Project ID বসানো হয়নি"
+            exit 1
+          fi
+          npx --yes supabase@2 --version
+          set +e
+          npx --yes supabase@2 functions deploy api --project-ref "$PROJECT_REF" --no-verify-jwt --use-api --yes 2>&1 | tee deploy.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "::error title=Supabase deploy::$(tail -c 900 deploy.log | tr '\r\n' '  ')"
+            exit "$status"
+          fi
+
+      - name: Check the live API
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        run: |
+          PROJECT_REF="$(tr -d '[:space:]' < supabase-project-id.txt)"
+          for i in 1 2 3 4 5; do
+            BODY="$(curl -s "https://$PROJECT_REF.supabase.co/functions/v1/api/health" || true)"
+            echo "$BODY"
+            echo "$BODY" | grep -q '"status":"ok"' && exit 0
+            sleep 5
+          done
+          echo "::error title=Deploy check::লাইভ API /health এ status ok দেয়নি"
+          exit 1

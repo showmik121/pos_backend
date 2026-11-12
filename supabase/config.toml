@@ -1,0 +1,6 @@
+# এই রিপোর জন্য Supabase CLI সেটিংস (শুধু API ফাংশনের যা লাগে)।
+project_id = "pos-backend"
+
+[functions.api]
+# API নিজেই লগইন যাচাই করে (Bearer JWT), তাই Supabase এর বিল্ট-ইন JWT চেক বন্ধ।
+verify_jwt = false

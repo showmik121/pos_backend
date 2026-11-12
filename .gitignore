@@ -3,3 +3,7 @@ node_modules/
 .env.*
 !.env.example
 *.log
+# জেনারেটেড — CI/ডিপ্লয় স্ক্রিপ্ট নিজেই বানায়
+supabase/functions/api/app.bundle.js
+supabase/.temp/
+deploy.log

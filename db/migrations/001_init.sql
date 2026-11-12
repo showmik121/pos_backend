@@ -1,11 +1,19 @@
--- POS ব্যাকএন্ড: প্রাথমিক স্কিমা (PostgreSQL 14+)
+-- POS ব্যাকএন্ড: প্রাথমিক স্কিমা (Supabase PostgreSQL 15+)
 -- নিয়ম: প্রতিটি টেবিলে store_id থাকে; Row Level Security দিয়ে এক দোকানের ডেটা অন্য দোকান দেখতে পায় না।
 -- অ্যাপ প্রতিটি রিকোয়েস্টে ট্রানজ্যাকশনের ভেতর set_config('app.store_id', <uuid>, true) চালায়।
 -- টাকা: numeric(12,2)। স্টক: বেস ইউনিটে (পিস) পূর্ণসংখ্যা।
 
 BEGIN;
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto; -- gen_random_uuid()
+-- অ্যাপের জন্য আলাদা রোল। Supabase এর `postgres` রোল RLS এড়িয়ে যায়, তাই API কখনো সেটি দিয়ে চলবে না।
+-- NOBYPASSRLS + টেবিলের মালিক নয় = RLS সবসময় প্রযোজ্য। পাসওয়ার্ড বসায় scripts/db-migrate.ts (POS_APP_PASSWORD থেকে)।
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pos_app') THEN
+    CREATE ROLE pos_app LOGIN NOBYPASSRLS NOSUPERUSER NOCREATEDB NOCREATEROLE;
+  END IF;
+END $$;
+ALTER ROLE pos_app SET statement_timeout = '15s';
 
 -- ---------------------------------------------------------------- দোকান ও ব্যবহারকারী
 CREATE TABLE stores (
@@ -224,17 +232,33 @@ END $$;
 REVOKE ALL ON FUNCTION auth_find_user(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION auth_register_store(text, text, text, text, text) FROM PUBLIC;
 
--- অ্যাপ রোল তৈরি (একবার, সুপারইউজার দিয়ে): CREATE ROLE pos_app LOGIN PASSWORD '...';
--- তারপর নিচের গ্র্যান্টগুলো pos_app রোল থাকলে চলবে।
+-- ---------------------------------------------------------------- অনুমতি (Supabase এর জন্য জরুরি)
+-- Supabase ডিফল্টে নতুন টেবিল/ফাংশন anon ও authenticated রোলকে দিয়ে দেয় (Data API দিয়ে ইন্টারনেট থেকে ছোঁয়া যায়)।
+-- আমরা Data API ব্যবহার করি না, তাই সব বন্ধ করে শুধু pos_app কে প্রয়োজনীয়টুকু দিই।
+-- (RLS চালু থাকায় এমনিতেই সারি দেখা যেত না; এটি দ্বিতীয় স্তর — ফাংশনগুলো এই স্তর ছাড়া RPC দিয়ে খোলা থাকত।)
 DO $$
+DECLARE r text;
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pos_app') THEN
-    GRANT USAGE ON SCHEMA public TO pos_app;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO pos_app;
-    REVOKE UPDATE, DELETE ON stock_movements, due_ledger FROM pos_app;
-    GRANT EXECUTE ON FUNCTION auth_find_user(text), auth_register_store(text, text, text, text, text),
-      app_store_id() TO pos_app;
-  END IF;
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA public FROM %I', r);
+      EXECUTE format('REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM %I', r);
+      EXECUTE format('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM %I', r);
+      EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM %I', r);
+      EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM %I', r);
+      EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM %I', r);
+    END IF;
+  END LOOP;
 END $$;
+
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
+
+GRANT USAGE ON SCHEMA public TO pos_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO pos_app;
+REVOKE ALL ON schema_migrations FROM pos_app;                        -- মাইগ্রেশনের হিসাব অ্যাপ ছোঁবে না
+REVOKE UPDATE, DELETE ON stock_movements, due_ledger FROM pos_app;   -- খাতা শুধু যোগ হয়
+GRANT EXECUTE ON FUNCTION auth_find_user(text), auth_register_store(text, text, text, text, text), app_store_id()
+  TO pos_app;
+-- নতুন টেবিল যোগ করলে পরের মাইগ্রেশনে একইভাবে GRANT দিতে হবে।
 
 COMMIT;
