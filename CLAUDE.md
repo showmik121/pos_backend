@@ -1,0 +1,69 @@
+# pos_backend — CLAUDE.md
+
+ফার্মেসি ও কসমেটিক্স দোকানের POS-এর ব্যাকএন্ড API। **TypeScript**, ডাটাবেস **Supabase PostgreSQL**, API চলে **Supabase Edge Function** হিসেবে (লোকালে সাধারণ Node সার্ভার)। ফ্রন্টএন্ড আলাদা রিপো: `showmik121/pos_fontend`।
+
+> এই রিপোর `main` ব্রাঞ্চই একমাত্র সত্য-উৎস। `main`-এ পুশ করলে CI পাস হওয়ার পর API নিজে থেকে Supabase-এ ডিপ্লয় হয়।
+
+## কমান্ড
+```bash
+npm install
+npm run dev          # http://localhost:3001/api/health (tsx watch)
+npm run typecheck
+npm test             # vitest run tests/unit (ডাটাবেস লাগে না)
+npm run build:edge   # esbuild বান্ডেল -> supabase/functions/api/app.bundle.js
+npm run db:migrate   # db/migrations/*.sql চালায়
+```
+Node >= 20.12। লকফাইল নেই (`npm install` ব্যবহার হয়)। কমিটের আগে typecheck + test পাস করান।
+
+## ফোল্ডার
+| পথ | কাজ |
+|---|---|
+| `server/app.ts` | পুরো API; Web-standard `Request -> Response`, Node ও Deno দুটোতেই একই কোড |
+| `server/index.ts`, `server/config.ts` | লোকাল Node সার্ভার; env থেকে app বানায় |
+| `src/domain/` | বিশুদ্ধ ফাংশন: money (পয়সা), units, expiry, fifo, sale, phone, digits, errors |
+| `src/auth/` | scrypt পাসওয়ার্ড (প্যারামিটারসহ সংরক্ষিত), HS256 JWT, লগইন-ব্যর্থতার রেট লিমিট |
+| `src/db/` | `types.ts` (ইন্টারফেস), `pg.ts` (postgres.js), `memory.ts` (টেস্টের জন্য) |
+| `db/migrations/` | SQL স্কিমা, RLS, `pos_app` রোল |
+| `edge/` | `build.mjs` (বান্ডেল), `entry.ts`, `smoke-test.mjs` (Deno) |
+| `supabase/` | `config.toml`, `functions/api/index.ts` (Edge এন্ট্রি) |
+| `tests/unit/` | api, auth, domain টেস্ট |
+
+## API (প্রিফিক্স `/api`)
+`GET /health`, `POST /v1/auth/register-store`, `POST /v1/auth/login`, `GET /v1/me`, `GET|POST /v1/staff`, `PATCH /v1/staff/:id`।
+- লাইভ: `https://<PROJECT_REF>.supabase.co/functions/v1/api/...`
+- টোকেন `Authorization: Bearer <token>` হেডারে (কুকি নয়)।
+- ত্রুটির আকার: `{ "error": { "code", "message", "details" } }`, বার্তা বাংলায়।
+
+**এখনো নেই:** পণ্য, স্টক/ব্যাচ, বিক্রি, বাকি, সিংক-এর endpoint। স্কিমায় এসবের টেবিল আছে (`products`, `stock_batches`, `stock_movements`, `customers`, `sales`, `sale_items`, `payments`, `store_counters`) কিন্তু `server/app.ts`-এ রুট নেই। ফ্রন্টএন্ড এখন এসব ডেটা শুধু ফোনের `localStorage`-এ রাখে। নতুন endpoint বানালে ফ্রন্টএন্ডের `src/lib/domain` ও `src/lib/store` যুক্তির সাথে এখানের `src/domain` মিলিয়ে রাখুন।
+
+## ডোমেইন নিয়ম (ভাঙা যাবে না)
+- টাকা **পূর্ণসংখ্যা পয়সায়**, স্টক **পিসে**। কখনো float নয়।
+- বিক্রি **FIFO ব্যাচ** অনুযায়ী, মেয়াদোত্তীর্ণ ব্যাচ বাদ।
+- মোবাইল নম্বর ইংরেজি অঙ্কে স্বাভাবিক করা হয় (`src/domain/phone.ts`, `digits.ts`)।
+- ভুলের বার্তা বাংলায়, `DomainError` দিয়ে।
+
+## নিরাপত্তা-স্থাপত্য (পরিবর্তনের আগে ভালো করে বুঝুন)
+- **মাল্টি-টেন্যান্ট আলাদা রাখে Row Level Security।** API সবসময় `pos_app` রোল (NOBYPASSRLS) দিয়ে ডাটাবেসে যায়; Supabase-এর `postgres` রোল RLS এড়িয়ে যায়, তাই কখনো সেটি দিয়ে অ্যাপ সংযোগ করবেন না।
+- প্রতিটি অনুরোধ একটি ট্রানজ্যাকশনে `set_config('app.store_id', …, true)` বসায় (Transaction pooler-এ নিরাপদ)। নতুন টেবিলে `store_id` ও RLS পলিসি বাধ্যতামূলক।
+- মাইগ্রেশন `anon`/`authenticated` রোলের অনুমতি তুলে নেয়; আমরা Supabase Data API ব্যবহার করি না।
+- JWT: শুধু HS256 (header-এর `alg` বিশ্বাস করা হয় না), `JWT_SECRET` কমপক্ষে ৩২ অক্ষর, মেয়াদ ১২ ঘণ্টা।
+- পাসওয়ার্ড: scrypt, `scrypt$N$r$p$salt$hash` ফরম্যাট (প্যারামিটার বাড়ানো যায়)।
+- CORS: `ALLOWED_ORIGINS` secret। নতুন ফ্রন্টএন্ড ঠিকানা এখানে যোগ না করলে ব্রাউজার আটকাবে।
+- সব SQL parameterized (postgres.js)। স্ট্রিং জুড়ে SQL বানানো নিষেধ।
+
+## পরিবেশ-চলক (শুধু নাম; মান কখনো কমিট নয়)
+`DATABASE_URL` (Transaction pooler, ইউজার `pos_app.<ref>`), `DATABASE_URL_UNPOOLED` (মাইগ্রেশনের জন্য, ইউজার `postgres.<ref>`), `POS_APP_PASSWORD`, `JWT_SECRET`, `ALLOWED_ORIGINS`, `API_PORT`, `NODE_ENV`। উদাহরণ `.env.example`-এ।
+গোপন তথ্য (পাসওয়ার্ড, `JWT_SECRET`, access token) GitHub বা চ্যাটে দেওয়া নিষেধ।
+
+## ডিপ্লয় ও CI
+`.github/workflows/ci.yml`: typecheck + unit test → Deno-তে Edge বিল্ড → `main`-এ পুশ হলে Supabase ডিপ্লয় ও `/health` যাচাই (`SUPABASE_ACCESS_TOKEN` GitHub secret লাগে)। শুধু ডক বদলালে কমিট মেসেজে `[skip ci]` দিলে ডিপ্লয় এড়ানো যায়। হাতে ডিপ্লয়: `deploy-supabase.bat`, মাইগ্রেশন: `db-migrate.bat`।
+
+## কনভেনশন
+- ফাইল kebab-case; `src/domain` শুধু বিশুদ্ধ ফাংশন (I/O নয়)।
+- ডাটাবেস প্রবেশ `src/db/types.ts` ইন্টারফেসের আড়ালে; টেস্টে `memory.ts`।
+- নতুন ফিচার: আগে ব্যর্থ টেস্ট, তারপর কোড (`tests/unit/`)।
+- কমিট: `type: বর্ণনা` (feat, fix, chore, docs, test, refactor)।
+
+## জানা সীমাবদ্ধতা
+- ডিপ্লয় করা লাইভ API-তে লোড বা আসল পাসওয়ার্ডে scrypt সময় আমাদের পরীক্ষা করা নেই।
+- ব্যাকআপ/restore পদ্ধতি লেখা নেই (Supabase-এর নিজস্ব ব্যাকআপের ওপর নির্ভর)।
