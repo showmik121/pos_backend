@@ -53,6 +53,7 @@ Supabase এর `postgres` রোল Row Level Security **এড়িয়ে 
 npm install
 npm run dev          # http://localhost:3001/api/health
 npm test             # ইউনিট টেস্ট
+npm run test:integration  # আসল Postgres লাগে (INTEGRATION_DATABASE_URL = pos_app রোলের URL, আগে npm run db:migrate)
 npm run typecheck
 node edge/build.mjs  # Edge বান্ডেল (supabase/functions/api/app.bundle.js)
 ```
@@ -61,7 +62,7 @@ node edge/build.mjs  # Edge বান্ডেল (supabase/functions/api/app.bu
 
 ## যা এখনও আসল পরিবেশে যাচাই হয়নি
 
-- `src/db/pg.ts` ও SQL মাইগ্রেশন আসল Supabase/PostgreSQL এর বিরুদ্ধে চালানো হয়নি (টেস্ট ইন-মেমরি রিপোজিটরি দিয়ে)।
+- `src/db/pg.ts`, মাইগ্রেশন ও RLS এখন CI-র `postgres` জবে আসল PostgreSQL 16-এ `pos_app` রোলে যাচাই হয় (`tests/integration/`)। তবে সেটি সাধারণ Postgres, Supabase-এর নিজস্ব pooler (পোর্ট 6543), রোল ও লাইভ ডেটাবেস নয়; ওগুলো এই যাচাইয়ের বাইরে।
 - Deno তে scrypt/বান্ডেল: CI এর `supabase-edge` জব `edge/smoke-test.mjs` দিয়ে এটি যাচাই করে। scrypt (N=16384) Edge এর CPU সীমায় ধীর হলে প্যারামিটার কমাতে হতে পারে।
 - লগইন-সীমা মেমরিতে (প্রতি Edge instance এ আলাদা) — পরে ডাটাবেস টেবিলে সরানো হবে।
 - Supabase ফ্রি প্ল্যানে ১ সপ্তাহ অব্যবহৃত থাকলে প্রজেক্ট pause হয় এবং ব্যাকআপ নেই — আসল দোকানের আগে Pro প্ল্যান ভাবুন।

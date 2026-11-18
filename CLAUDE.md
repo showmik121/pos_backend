@@ -10,6 +10,7 @@ npm install
 npm run dev          # http://localhost:3001/api/health (tsx watch)
 npm run typecheck
 npm test             # vitest run tests/unit (ডাটাবেস লাগে না)
+npm run test:integration  # আসল Postgres + pos_app লাগে (INTEGRATION_DATABASE_URL); CI-র `postgres` জবে চলে
 npm run build:edge   # esbuild বান্ডেল -> supabase/functions/api/app.bundle.js
 npm run db:migrate   # db/migrations/*.sql চালায়
 ```
@@ -26,7 +27,8 @@ Node >= 20.12। লকফাইল নেই (`npm install` ব্যবহা�
 | `db/migrations/` | SQL স্কিমা, RLS, `pos_app` রোল |
 | `edge/` | `build.mjs` (বান্ডেল), `entry.ts`, `smoke-test.mjs` (Deno) |
 | `supabase/` | `config.toml`, `functions/api/index.ts` (Edge এন্ট্রি) |
-| `tests/unit/` | api, auth, domain টেস্ট |
+| `tests/unit/` | api, auth, domain, sync, throttle টেস্ট (ইন-মেমরি) |
+| `tests/integration/` | আসল Postgres-এ মাইগ্রেশন-পরবর্তী RLS, সিংক, থ্রটল, অনুমতি |
 
 ## API (প্রিফিক্স `/api`)
 `GET /health`, `POST /v1/auth/register-store`, `POST /v1/auth/login`, `GET /v1/me`, `GET|POST /v1/staff`, `PATCH /v1/staff/:id`, সিংক: `POST /v1/sync/register-device`, `POST /v1/sync/push`, `GET /v1/sync/pull?after=&limit=`।
@@ -60,7 +62,7 @@ Node >= 20.12। লকফাইল নেই (`npm install` ব্যবহা�
 গোপন তথ্য (পাসওয়ার্ড, `JWT_SECRET`, access token) GitHub বা চ্যাটে দেওয়া নিষেধ।
 
 ## ডিপ্লয় ও CI
-`.github/workflows/ci.yml`: typecheck + unit test → Deno-তে Edge বিল্ড → `main`-এ পুশ হলে Supabase ডিপ্লয় ও `/health` যাচাই (`SUPABASE_ACCESS_TOKEN` GitHub secret লাগে)। শুধু ডক বদলালে কমিট মেসেজে `[skip ci]` দিলে ডিপ্লয় এড়ানো যায়। হাতে ডিপ্লয়: `deploy-supabase.bat`, মাইগ্রেশন: `db-migrate.bat`।
+`.github/workflows/ci.yml`: typecheck + unit test → Postgres 16 সার্ভিসে মাইগ্রেশন (দুইবার) + ইন্টিগ্রেশন টেস্ট → Deno-তে Edge বিল্ড → `main`-এ পুশ হলে Supabase ডিপ্লয় ও `/health` যাচাই (`SUPABASE_ACCESS_TOKEN` GitHub secret লাগে)। শুধু ডক বদলালে কমিট মেসেজে `[skip ci]` দিলে ডিপ্লয় এড়ানো যায়। হাতে ডিপ্লয়: `deploy-supabase.bat`, মাইগ্রেশন: `db-migrate.bat`।
 
 ## কনভেনশন
 - ফাইল kebab-case; `src/domain` শুধু বিশুদ্ধ ফাংশন (I/O নয়)।

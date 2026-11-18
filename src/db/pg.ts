@@ -7,7 +7,7 @@ import type { NewSyncEvent, PublicUser, Repo, Store, SyncEvent, UserWithHash } f
 // - প্রতিটি দোকান-সংক্রান্ত কাজ একটি ট্রানজ্যাকশনে চলে এবং শুরুতে set_config('app.store_id', …, true) বসায়,
 //   ফলে RLS নীতি অন্য দোকানের সারি আটকে দেয়। ট্রানজ্যাকশন-লোকাল বলে pooler এ নিরাপদ।
 // - অবশ্যই `pos_app` রোল দিয়ে সংযোগ করতে হবে (Supabase এর `postgres` রোল RLS এড়িয়ে যায়)।
-// দ্রষ্টব্য: এই ফাইল এখনও আসল PostgreSQL এর বিরুদ্ধে চালিয়ে পরীক্ষা করা হয়নি।
+// যাচাই: tests/integration/pg.test.ts CI তে আসল PostgreSQL 16 এ pos_app রোলে চলে (Supabase pooler এ নয়)।
 
 const UNIQUE_VIOLATION = "23505"
 
