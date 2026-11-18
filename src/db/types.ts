@@ -21,6 +21,21 @@ export interface Store {
   kind: StoreKind
 }
 
+export interface NewSyncEvent {
+  id: string
+  kind: string
+  /** ক্লায়েন্টের ঘড়ির সময় (ISO); কনফ্লিক্টে "শেষ বদল জেতে" ঠিক করতে ব্যবহার হয় */
+  at: string
+  payload: Record<string, unknown>
+}
+
+export interface SyncEvent extends NewSyncEvent {
+  /** সার্ভারের ক্রমিক নম্বর; pull-এর কার্সর */
+  seq: number
+  deviceCode: string
+  userId: string
+}
+
 // অ্যাপ শুধু এই ইন্টারফেস চেনে। দুটি বাস্তবায়ন আছে: pg.ts (আসল PostgreSQL/Supabase) ও memory.ts (টেস্ট)।
 export interface Repo {
   registerStore(input: {
@@ -39,6 +54,12 @@ export interface Repo {
   createStaff(storeId: string, input: { name: string; phone: string; passwordHash: string }): Promise<PublicUser>
   listStaff(storeId: string): Promise<PublicUser[]>
   setUserActive(storeId: string, userId: string, active: boolean): Promise<PublicUser | null>
+  /** ডিভাইসকে দোকান-ভিত্তিক কোড (A, B, C…) দেয়; একই ডিভাইস আবার চাইলে একই কোড। ২৬টির বেশি নয়। */
+  registerDevice(storeId: string, deviceId: string): Promise<string>
+  /** ইভেন্ট যোগ করে (একই id আগে থাকলে বাদ, ইডেমপোটেন্ট); অনিবন্ধিত ডিভাইসে device_unregistered। সব id ফেরত দেয়। */
+  pushEvents(storeId: string, userId: string, deviceId: string, events: NewSyncEvent[]): Promise<string[]>
+  /** seq > after ইভেন্ট ক্রমে; limit-এর বেশি থাকলে hasMore। */
+  pullEvents(storeId: string, after: number, limit: number): Promise<{ events: SyncEvent[]; lastSeq: number; hasMore: boolean }>
   /**
    * হার-সীমা: bucket-এ একটি চেষ্টা নথিভুক্ত করে। সীমা (windowSeconds-এর মধ্যে max বার) পেরোলে false।
    * আটকে থাকা অবস্থায় নতুন চেষ্টা গোনা হয় না। দোকানের ডেটার সঙ্গে সম্পর্ক নেই।

@@ -1,6 +1,6 @@
 import postgres from "postgres"
 import { DomainError } from "../domain/errors.js"
-import type { PublicUser, Repo, Store, UserWithHash } from "./types.js"
+import type { NewSyncEvent, PublicUser, Repo, Store, SyncEvent, UserWithHash } from "./types.js"
 
 // PostgreSQL (Supabase) রিপোজিটরি।
 // - Supabase এর Transaction pooler (পোর্ট 6543) এর জন্য prepare:false লাগে।
@@ -104,6 +104,52 @@ export function createPgRepo(opts: { connectionString: string; max?: number }): 
     async throttleReset(bucket) {
       await sql`SELECT auth_throttle_reset(${bucket})`
     },
+
+    registerDevice: (storeId, deviceId) =>
+      withStore(storeId, async (tx) => {
+        // একসাথে দুই ডিভাইস নিবন্ধনে একই কোড না পড়ার জন্য দোকান-ভিত্তিক তালা
+        await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`dev:${storeId}`}, 0))`
+        const found = await tx<{ code: string }[]>`SELECT code FROM sync_devices WHERE device_id = ${deviceId}`
+        if (found[0]) return found[0].code
+        const used = await tx<{ code: string }[]>`SELECT code FROM sync_devices ORDER BY code`
+        const free = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i)).find((c) => !used.some((u: { code: string }) => u.code === c))
+        if (!free) throw new DomainError("device_limit", "একটি দোকানে সর্বোচ্চ ২৬টি ডিভাইস যুক্ত করা যায়")
+        await tx`INSERT INTO sync_devices (store_id, device_id, code) VALUES (${storeId}, ${deviceId}, ${free})`
+        return free
+      }),
+
+    pushEvents: (storeId, userId, deviceId, events: NewSyncEvent[]) =>
+      withStore(storeId, async (tx) => {
+        // দোকানের push গুলো এক এক করে চলে, তাই seq-এর ক্রম আর commit-এর ক্রম মেলে (pull-এ কোনো ইভেন্ট বাদ পড়ে না)
+        await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`push:${storeId}`}, 0))`
+        const dev = await tx<{ code: string }[]>`SELECT code FROM sync_devices WHERE device_id = ${deviceId}`
+        if (!dev[0]) throw new DomainError("device_unregistered", "এই ডিভাইস নিবন্ধিত নয়")
+        for (const e of events) {
+          await tx`
+            INSERT INTO sync_events (store_id, id, device_code, user_id, kind, client_at, payload)
+            VALUES (${storeId}, ${e.id}, ${dev[0].code}, ${userId}, ${e.kind}, ${e.at}, ${tx.json(e.payload as Parameters<typeof tx.json>[0])})
+            ON CONFLICT (store_id, id) DO NOTHING`
+        }
+        return events.map((e) => e.id)
+      }),
+
+    pullEvents: (storeId, after, limit) =>
+      withStore(storeId, async (tx) => {
+        const rows = await tx<{ seq: string; id: string; kind: string; client_at: Date; device_code: string; user_id: string; payload: Record<string, unknown> }[]>`
+          SELECT seq, id, kind, client_at, device_code, user_id, payload
+          FROM sync_events WHERE seq > ${after} ORDER BY seq LIMIT ${limit + 1}`
+        const page = rows.slice(0, limit)
+        const events: SyncEvent[] = page.map((r: { seq: string; id: string; kind: string; client_at: Date; device_code: string; user_id: string; payload: Record<string, unknown> }) => ({
+          seq: Number(r.seq),
+          id: r.id,
+          kind: r.kind,
+          at: r.client_at.toISOString(),
+          deviceCode: r.device_code,
+          userId: r.user_id,
+          payload: r.payload,
+        }))
+        return { events, lastSeq: events.length ? events[events.length - 1]!.seq : after, hasMore: rows.length > limit }
+      }),
 
     close: () => sql.end({ timeout: 5 }),
   }

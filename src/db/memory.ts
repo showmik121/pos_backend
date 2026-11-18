@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { DomainError } from "../domain/errors.js"
-import type { PublicUser, Repo, Store, UserWithHash } from "./types.js"
+import type { NewSyncEvent, PublicUser, Repo, Store, SyncEvent, UserWithHash } from "./types.js"
 
 // টেস্ট ও লোকাল ডেমোর জন্য ইন-মেমরি রিপোজিটরি। pg.ts এর সঙ্গে একই ইন্টারফেস।
 export function createMemoryRepo(opts: { now?: () => number } = {}): Repo {
@@ -8,6 +8,9 @@ export function createMemoryRepo(opts: { now?: () => number } = {}): Repo {
   const attempts = new Map<string, number[]>()
   const stores = new Map<string, Store>()
   const users = new Map<string, UserWithHash>()
+  const devices = new Map<string, string[]>() // storeId -> [deviceId...] (সূচক = কোডের ক্রম)
+  const events: Array<SyncEvent & { storeId: string }> = []
+  let seq = 0
 
   const publicUser = (u: UserWithHash): PublicUser => ({
     id: u.id,
@@ -28,6 +31,35 @@ export function createMemoryRepo(opts: { now?: () => number } = {}): Repo {
       stores.set(storeId, { id: storeId, name: storeName, kind: storeKind })
       users.set(userId, { id: userId, storeId, name: ownerName, phone, passwordHash, role: "owner", active: true })
       return { storeId, userId }
+    },
+
+    async registerDevice(storeId, deviceId) {
+      const list = devices.get(storeId) ?? []
+      let i = list.indexOf(deviceId)
+      if (i < 0) {
+        if (list.length >= 26) throw new DomainError("device_limit", "একটি দোকানে সর্বোচ্চ ২৬টি ডিভাইস যুক্ত করা যায়")
+        list.push(deviceId)
+        devices.set(storeId, list)
+        i = list.length - 1
+      }
+      return String.fromCharCode(65 + i)
+    },
+
+    async pushEvents(storeId, userId, deviceId, batch: NewSyncEvent[]) {
+      const i = (devices.get(storeId) ?? []).indexOf(deviceId)
+      if (i < 0) throw new DomainError("device_unregistered", "এই ডিভাইস নিবন্ধিত নয়")
+      const deviceCode = String.fromCharCode(65 + i)
+      for (const e of batch) {
+        if (events.some((x) => x.storeId === storeId && x.id === e.id)) continue
+        events.push({ storeId, seq: ++seq, id: e.id, kind: e.kind, at: e.at, payload: e.payload, deviceCode, userId })
+      }
+      return batch.map((e) => e.id)
+    },
+
+    async pullEvents(storeId, after, limit) {
+      const mine = events.filter((e) => e.storeId === storeId && e.seq > after).sort((a, b) => a.seq - b.seq)
+      const page = mine.slice(0, limit).map(({ storeId: _s, ...rest }) => rest)
+      return { events: page, lastSeq: page.length ? page[page.length - 1]!.seq : after, hasMore: mine.length > limit }
     },
 
     async findUserByPhone(phone) {

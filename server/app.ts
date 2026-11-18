@@ -2,7 +2,7 @@ import { DomainError } from "../src/domain/errors.js"
 import { normalizePhone } from "../src/domain/phone.js"
 import { hashPassword, verifyPassword, dummyHash } from "../src/auth/password.js"
 import { signToken, verifyToken, assertSecret } from "../src/auth/token.js"
-import type { PublicUser, Repo, StoreKind } from "../src/db/types.js"
+import type { NewSyncEvent, PublicUser, Repo, StoreKind } from "../src/db/types.js"
 
 // Web-standard (Request → Response) অ্যাপ: একই কোড Node (লোকাল) ও Supabase Edge Function (Deno) এ চলে।
 // সব রুট /api প্রিফিক্সের নিচে: https://<ref>.supabase.co/functions/v1/api/v1/...
@@ -19,6 +19,39 @@ const STATUS: Record<string, number> = {
 const statusFor = (code: string) => STATUS[code] ?? 400
 
 const MAX_BODY = 100 * 1024
+// সিংক: এক অনুরোধে সর্বোচ্চ ইভেন্ট, প্রতিটির সর্বোচ্চ আকার, শুধু মালিকের ইভেন্ট
+const SYNC_MAX_BODY = 600 * 1024
+const SYNC_MAX_EVENTS = 100
+const SYNC_MAX_PAYLOAD = 32_000
+const SYNC_PULL_DEFAULT = 200
+const SYNC_PULL_MAX = 500
+const SYNC_OWNER_ONLY = new Set(["sale_voided", "settings_updated"])
+const SYNC_LIMIT: Limit = { max: 600, window: 60 }
+const KIND_RE = /^[a-z][a-z0-9_]{1,39}$/
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/
+
+function parseDeviceId(v: unknown): string {
+  if (typeof v !== "string" || !UUID_RE.test(v)) throw new DomainError("invalid_input", "deviceId সঠিক নয়")
+  return v
+}
+
+function parseEvents(raw: unknown): NewSyncEvent[] {
+  if (!Array.isArray(raw) || raw.length < 1 || raw.length > SYNC_MAX_EVENTS) {
+    throw new DomainError("invalid_input", `events ১ থেকে ${SYNC_MAX_EVENTS}টি হতে হবে`)
+  }
+  return raw.map((r, i) => {
+    const e = (r ?? {}) as Record<string, unknown>
+    const where = `ইভেন্ট ${i + 1}`
+    if (typeof e.id !== "string" || !UUID_RE.test(e.id)) throw new DomainError("invalid_input", `${where}: id সঠিক নয়`)
+    if (typeof e.kind !== "string" || !KIND_RE.test(e.kind)) throw new DomainError("invalid_input", `${where}: kind সঠিক নয়`)
+    if (typeof e.at !== "string" || !ISO_RE.test(e.at) || Number.isNaN(Date.parse(e.at))) throw new DomainError("invalid_input", `${where}: at সঠিক সময় নয়`)
+    if (typeof e.payload !== "object" || e.payload === null || Array.isArray(e.payload)) throw new DomainError("invalid_input", `${where}: payload অবজেক্ট হতে হবে`)
+    if (JSON.stringify(e.payload).length > SYNC_MAX_PAYLOAD) throw new DomainError("invalid_input", `${where}: payload খুব বড়`)
+    return { id: e.id, kind: e.kind, at: e.at, payload: e.payload as Record<string, unknown> }
+  })
+}
+
 const STORE_KINDS: StoreKind[] = ["pharmacy", "cosmetics", "other"]
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 
@@ -49,11 +82,11 @@ const LOGIN_IP: Limit = { max: 60, window: 15 * 60 } // এক IP থেকে �
 const REGISTER_IP: Limit = { max: 5, window: 60 * 60 }
 const REGISTER_ALL: Limit = { max: 200, window: 60 * 60 }
 
-async function readJson(req: Request): Promise<Record<string, unknown>> {
+async function readJson(req: Request, maxBody = MAX_BODY): Promise<Record<string, unknown>> {
   const declared = Number(req.headers.get("content-length") ?? 0)
-  if (declared > MAX_BODY) throw new DomainError("payload_too_large", "অনুরোধ খুব বড়")
+  if (declared > maxBody) throw new DomainError("payload_too_large", "অনুরোধ খুব বড়")
   const text = await req.text()
-  if (text.length > MAX_BODY) throw new DomainError("payload_too_large", "অনুরোধ খুব বড়")
+  if (text.length > maxBody) throw new DomainError("payload_too_large", "অনুরোধ খুব বড়")
   if (!text) return {}
   try {
     const body: unknown = JSON.parse(text)
@@ -152,6 +185,38 @@ export function createApp(opts: AppOptions): App {
       const user = await authenticate(req)
       const store = await repo.getStore(user.storeId)
       return { status: 200, body: { user, store } }
+    }
+
+    // সিংক: ইভেন্ট-লগ (ডিভাইস নিবন্ধন, push, pull)
+    if (key === "POST /v1/sync/register-device") {
+      const user = await authenticate(req)
+      const b = await readJson(req)
+      const code = await repo.registerDevice(user.storeId, parseDeviceId(b.deviceId))
+      return { status: 200, body: { code } }
+    }
+
+    if (key === "POST /v1/sync/push") {
+      const user = await authenticate(req)
+      if (!(await withinLimits([[`sync:s:${user.storeId}`, SYNC_LIMIT]]))) throw tooMany()
+      const b = await readJson(req, SYNC_MAX_BODY)
+      const deviceId = parseDeviceId(b.deviceId)
+      const events = parseEvents(b.events)
+      if (user.role !== "owner" && events.some((e) => SYNC_OWNER_ONLY.has(e.kind))) {
+        throw new DomainError("forbidden", "এটি শুধু মালিক করতে পারবেন")
+      }
+      const accepted = await repo.pushEvents(user.storeId, user.id, deviceId, events)
+      return { status: 200, body: { accepted } }
+    }
+
+    if (key === "GET /v1/sync/pull") {
+      const user = await authenticate(req)
+      if (!(await withinLimits([[`sync:s:${user.storeId}`, SYNC_LIMIT]]))) throw tooMany()
+      const q = new URL(req.url).searchParams
+      const afterText = q.get("after") ?? "0"
+      const limitText = q.get("limit") ?? String(SYNC_PULL_DEFAULT)
+      if (!/^\d{1,15}$/.test(afterText) || !/^\d{1,4}$/.test(limitText)) throw new DomainError("invalid_input", "after/limit সংখ্যা হতে হবে")
+      const limit = Math.min(Math.max(Number(limitText), 1), SYNC_PULL_MAX)
+      return { status: 200, body: await repo.pullEvents(user.storeId, Number(afterText), limit) }
     }
 
     // A2: স্টাফ ব্যবস্থাপনা (শুধু মালিক)
