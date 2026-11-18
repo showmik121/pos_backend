@@ -43,7 +43,57 @@ describe("API", () => {
     const { call } = start()
     const r = await call("GET", "/health")
     expect(r.status).toBe(200)
-    expect(r.json).toEqual({ status: "ok" })
+    expect(r.json).toEqual({ status: "ok", db: "ok" })
+  })
+
+  describe("health: ডেটাবেস পিং", () => {
+    const healthRequest = new Request("https://edge.test/api/health")
+
+    function appWith(ping: () => Promise<void>, extra: { now?: () => number; healthTimeoutMs?: number } = {}) {
+      const repo = { ...createMemoryRepo(), ping }
+      return createApp({ repo, jwtSecret: SECRET, ...extra })
+    }
+
+    it("ডেটাবেস না পেলে ৫০৩ ও degraded, ভেতরের ত্রুটি ফাঁস হয় না", async () => {
+      const app = appWith(async () => {
+        throw new Error("password authentication failed for user pos_app")
+      })
+      const res = await app.fetch(healthRequest)
+      const text = await res.text()
+      expect(res.status).toBe(503)
+      expect(JSON.parse(text)).toEqual({ status: "degraded", db: "down" })
+      expect(text).not.toContain("pos_app")
+    })
+
+    it("ডেটাবেস সাড়া না দিলে সময়সীমার পর ৫০৩", async () => {
+      const app = appWith(() => new Promise<void>(() => {}), { healthTimeoutMs: 20 })
+      const res = await app.fetch(healthRequest)
+      expect(res.status).toBe(503)
+    })
+
+    it("৫ সেকেন্ডের মধ্যে বারবার ডাকলে ডেটাবেসে একবারই যায়, পরে আবার যায়", async () => {
+      let calls = 0
+      let t = 1_000_000
+      const app = appWith(async () => void calls++, { now: () => t })
+      await app.fetch(healthRequest)
+      await app.fetch(healthRequest)
+      expect(calls).toBe(1)
+      t += 6_000
+      await app.fetch(healthRequest)
+      expect(calls).toBe(2)
+    })
+
+    it("ডেটাবেস ফিরে এলে ক্যাশ পেরোলে আবার ok", async () => {
+      let up = false
+      let t = 1_000_000
+      const app = appWith(async () => {
+        if (!up) throw new Error("down")
+      }, { now: () => t })
+      expect((await app.fetch(healthRequest)).status).toBe(503)
+      up = true
+      t += 6_000
+      expect((await app.fetch(healthRequest)).status).toBe(200)
+    })
   })
 
   it("দোকান খোলা → লগইন → /me", async () => {

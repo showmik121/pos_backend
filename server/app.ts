@@ -25,6 +25,8 @@ const SYNC_MAX_EVENTS = 100
 const SYNC_MAX_PAYLOAD = 32_000
 const SYNC_PULL_DEFAULT = 200
 const SYNC_PULL_MAX = 500
+const HEALTH_CACHE_MS = 5_000
+const HEALTH_TIMEOUT_MS = 3_000
 const SYNC_OWNER_ONLY = new Set(["sale_voided", "settings_updated"])
 const SYNC_LIMIT: Limit = { max: 600, window: 60 }
 const KIND_RE = /^[a-z][a-z0-9_]{1,39}$/
@@ -103,6 +105,8 @@ export interface AppOptions {
   ttlSeconds?: number
   corsOrigins?: string[]
   now?: () => number
+  /** স্বাস্থ্য-পরীক্ষায় ডেটাবেসের জন্য অপেক্ষা (মিলিসেকেন্ড); টেস্টে ছোট করা যায় */
+  healthTimeoutMs?: number
 }
 
 export interface App {
@@ -112,8 +116,33 @@ export interface App {
 type Result = { status: number; body: unknown }
 
 export function createApp(opts: AppOptions): App {
-  const { repo, jwtSecret, ttlSeconds = 43_200, corsOrigins = [], now = () => Date.now() } = opts
+  const { repo, jwtSecret, ttlSeconds = 43_200, corsOrigins = [], now = () => Date.now(), healthTimeoutMs = HEALTH_TIMEOUT_MS } = opts
   assertSecret(jwtSecret)
+
+  // স্বাস্থ্য-পরীক্ষা: ডেটাবেস পিং, ছোট ক্যাশসহ (বারবার ডাকলে ডেটাবেসে চাপ পড়ে না)
+  let healthCache: { at: number; result: Result } | null = null
+  async function health(): Promise<Result> {
+    const t = now()
+    if (healthCache && t - healthCache.at < HEALTH_CACHE_MS) return healthCache.result
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let result: Result
+    try {
+      await Promise.race([
+        repo.ping(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("health timeout")), healthTimeoutMs)
+        }),
+      ])
+      result = { status: 200, body: { status: "ok", db: "ok" } }
+    } catch (err) {
+      console.error("health: ডেটাবেস পরীক্ষা ব্যর্থ", err) // ভেতরের বার্তা শুধু লগে, উত্তরে নয়
+      result = { status: 503, body: { status: "degraded", db: "down" } }
+    } finally {
+      clearTimeout(timer)
+    }
+    healthCache = { at: t, result }
+    return result
+  }
 
   const tokenFor = (user: PublicUser) =>
     signToken({ sub: user.id, sid: user.storeId, role: user.role }, jwtSecret, { ttlSeconds, now: now() })
@@ -144,7 +173,7 @@ export function createApp(opts: AppOptions): App {
   async function route(req: Request, path: string): Promise<Result> {
     const key = `${req.method} ${path}`
 
-    if (key === "GET /health") return { status: 200, body: { status: "ok" } }
+    if (key === "GET /health") return health()
 
     // A1: দোকান খোলা + মালিকের অ্যাকাউন্ট
     if (key === "POST /v1/auth/register-store") {

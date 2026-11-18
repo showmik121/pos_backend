@@ -108,6 +108,8 @@ export function createMemoryRepo(opts: { now?: () => number } = {}): Repo {
       attempts.delete(bucket)
     },
 
+    async ping() {},
+
     async close() {},
   }
 }

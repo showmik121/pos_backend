@@ -38,6 +38,9 @@ export interface SyncEvent extends NewSyncEvent {
 
 // অ্যাপ শুধু এই ইন্টারফেস চেনে। দুটি বাস্তবায়ন আছে: pg.ts (আসল PostgreSQL/Supabase) ও memory.ts (টেস্ট)।
 export interface Repo {
+  /** ডেটাবেসে পৌঁছানো যায় কি না (স্বাস্থ্য-পরীক্ষার জন্য); না গেলে ছোঁড়ে */
+  ping(): Promise<void>
+
   registerStore(input: {
     storeName: string
     storeKind: StoreKind

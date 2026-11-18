@@ -101,6 +101,10 @@ export function createPgRepo(opts: { connectionString: string; max?: number }): 
       return rows[0]?.ok === true
     },
 
+    async ping() {
+      await sql`SELECT 1`
+    },
+
     async throttleReset(bucket) {
       await sql`SELECT auth_throttle_reset(${bucket})`
     },
