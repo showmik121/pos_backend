@@ -1,6 +1,7 @@
 import { randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto"
 import { Buffer } from "node:buffer"
 import { DomainError } from "../domain/errors.js"
+import { COMMON_PASSWORDS } from "./common-passwords.js"
 
 const N = 16384
 const R = 8
@@ -13,16 +14,32 @@ function scrypt(password: string, salt: Uint8Array, keylen: number, opts: { N: n
   })
 }
 
-export function validatePasswordStrength(password: unknown): asserts password is string {
+const WEAK = () => new DomainError("weak_password", "এই পাসওয়ার্ডটি খুব সহজ, অন্য একটি দিন (অক্ষর ও সংখ্যা মিলিয়ে)")
+
+// ১২৩৪৫৬৭৮ বা ৮৭৬৫৪৩২১ ধরনের ধারা
+function isDigitRun(p: string): boolean {
+  if (!/^\d+$/.test(p)) return false
+  const d = [...p].map(Number)
+  const step = (d[1] ?? 0) - (d[0] ?? 0)
+  return Math.abs(step) === 1 && d.every((x, i) => i === 0 || x - (d[i - 1] ?? 0) === step)
+}
+
+export function validatePasswordStrength(password: unknown, ctx: { phone?: string } = {}): asserts password is string {
   if (typeof password !== "string" || password.length < 8) {
     throw new DomainError("weak_password", "পাসওয়ার্ড কমপক্ষে ৮ অক্ষরের হতে হবে")
   }
   if (password.length > 128) throw new DomainError("weak_password", "পাসওয়ার্ড খুব বড়")
+  const p = password.toLowerCase()
+  if (COMMON_PASSWORDS.has(p)) throw WEAK()
+  if (/^(.)\1+$/u.test(p)) throw WEAK() // একই অক্ষর বারবার
+  if (isDigitRun(p)) throw WEAK()
+  if (/^(\+?88)?01[3-9]\d{8}$/.test(p)) throw WEAK() // মোবাইল নম্বরই পাসওয়ার্ড
+  if (ctx.phone && p.replace(/^\+?88/, "") === ctx.phone) throw WEAK()
 }
 
 // ফরম্যাট: scrypt$N$r$p$saltB64$hashB64 — প্যারামিটার সংরক্ষিত থাকায় ভবিষ্যতে বাড়ানো যাবে।
-export async function hashPassword(password: unknown): Promise<string> {
-  validatePasswordStrength(password)
+export async function hashPassword(password: unknown, ctx: { phone?: string } = {}): Promise<string> {
+  validatePasswordStrength(password, ctx)
   const salt = randomBytes(16)
   const hash = await scrypt(password, salt, KEYLEN, { N, r: R, p: P })
   return `scrypt$${N}$${R}$${P}$${salt.toString("base64")}$${hash.toString("base64")}`

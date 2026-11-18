@@ -96,6 +96,15 @@ export function createPgRepo(opts: { connectionString: string; max?: number }): 
         return rows[0] ?? null
       }),
 
+    async throttle(bucket, max, windowSeconds) {
+      const rows = await sql<{ ok: boolean }[]>`SELECT auth_throttle(${bucket}, ${max}, ${windowSeconds}) AS ok`
+      return rows[0]?.ok === true
+    },
+
+    async throttleReset(bucket) {
+      await sql`SELECT auth_throttle_reset(${bucket})`
+    },
+
     close: () => sql.end({ timeout: 5 }),
   }
 }

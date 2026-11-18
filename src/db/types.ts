@@ -39,5 +39,12 @@ export interface Repo {
   createStaff(storeId: string, input: { name: string; phone: string; passwordHash: string }): Promise<PublicUser>
   listStaff(storeId: string): Promise<PublicUser[]>
   setUserActive(storeId: string, userId: string, active: boolean): Promise<PublicUser | null>
+  /**
+   * হার-সীমা: bucket-এ একটি চেষ্টা নথিভুক্ত করে। সীমা (windowSeconds-এর মধ্যে max বার) পেরোলে false।
+   * আটকে থাকা অবস্থায় নতুন চেষ্টা গোনা হয় না। দোকানের ডেটার সঙ্গে সম্পর্ক নেই।
+   */
+  throttle(bucket: string, max: number, windowSeconds: number): Promise<boolean>
+  /** bucket-এর গোনা শূন্য করে (সফল লগইনে)। */
+  throttleReset(bucket: string): Promise<void>
   close(): Promise<void>
 }

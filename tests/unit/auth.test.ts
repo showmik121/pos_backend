@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest"
 import { Buffer } from "node:buffer"
 import { hashPassword, verifyPassword } from "../../src/auth/password.js"
 import { signToken, verifyToken } from "../../src/auth/token.js"
-import { createFailureLimiter } from "../../src/auth/rate-limit.js"
 
 const SECRET = "x".repeat(40)
 
@@ -15,6 +14,24 @@ describe("পাসওয়ার্ড", () => {
     expect(await verifyPassword("x", "garbage")).toBe(false)
     expect(h).not.toBe(await hashPassword("correct horse")) // আলাদা salt
     await expect(hashPassword("short")).rejects.toMatchObject({ code: "weak_password" })
+  })
+
+  it("দুর্বল পাসওয়ার্ড বাতিল", async () => {
+    const weak = [
+      "password123", // চালু তালিকায়
+      "PASSWORD123", // বড় হাতেও একই
+      "aaaaaaaa", // একই অক্ষর
+      "12345678", // ধারা
+      "87654321",
+      "01712345678", // মোবাইল নম্বর
+      "+8801712345678",
+    ]
+    for (const w of weak) await expect(hashPassword(w)).rejects.toMatchObject({ code: "weak_password" })
+    // নিজের ফোন নম্বর (৮৮ ছাড়া) পাসওয়ার্ড হতে পারবে না
+    await expect(hashPassword("01911223344", { phone: "01911223344" })).rejects.toMatchObject({ code: "weak_password" })
+    // ভালো পাসওয়ার্ড চলে
+    expect(await hashPassword("Sobuj#Ghar2026")).toMatch(/^scrypt\$/)
+    expect(await hashPassword("staffpass1")).toMatch(/^scrypt\$/)
   })
 })
 
@@ -33,20 +50,5 @@ describe("টোকেন", () => {
     expect(verifyToken(`${none}.${p}.`, SECRET, { now })).toBeNull() // alg=none আক্রমণ
     expect(verifyToken("abc", SECRET)).toBeNull()
     expect(() => signToken({ sub: "a", sid: "b", role: "owner" }, "short")).toThrow(/৩২/)
-  })
-})
-
-describe("লগইন ব্যর্থতার সীমা", () => {
-  it("সীমা পেরোলে আটকায়, সময় গেলে খোলে", () => {
-    let t = 0
-    const l = createFailureLimiter({ max: 3, windowMs: 1000, now: () => t })
-    for (let i = 0; i < 3; i++) l.fail("k")
-    expect(l.isBlocked("k")).toBe(true)
-    expect(l.isBlocked("other")).toBe(false)
-    t = 1500
-    expect(l.isBlocked("k")).toBe(false)
-    l.fail("k")
-    l.reset("k")
-    expect(l.isBlocked("k")).toBe(false)
   })
 })

@@ -35,7 +35,7 @@ const owner = {
   storeKind: "pharmacy",
   ownerName: "আব্দুর রহমান",
   phone: "০১৭১২৩৪৫৬৭৮",
-  password: "password123",
+  password: "Sobuj#Ghar2026",
 }
 
 describe("API", () => {
@@ -54,7 +54,7 @@ describe("API", () => {
     expect(reg.json.user.phone).toBe("01712345678") // বাংলা অঙ্ক স্বাভাবিক হয়েছে
     expect(reg.json.user.passwordHash).toBeUndefined()
 
-    const login = await call("POST", "/v1/auth/login", { body: { phone: "+8801712345678", password: "password123" } })
+    const login = await call("POST", "/v1/auth/login", { body: { phone: "+8801712345678", password: "Sobuj#Ghar2026" } })
     expect(login.status).toBe(200)
     expect(login.json.user.passwordHash).toBeUndefined()
 
@@ -83,7 +83,7 @@ describe("API", () => {
     expect(wrong.status).toBe(401)
     expect(wrong.json.error.message).toBe(unknown.json.error.message) // নম্বর আছে কিনা বোঝা যায় না
     for (let i = 0; i < 4; i++) await call("POST", "/v1/auth/login", { body: { phone: owner.phone, password: "nope-nope" } })
-    const blocked = await call("POST", "/v1/auth/login", { body: { phone: owner.phone, password: "password123" } })
+    const blocked = await call("POST", "/v1/auth/login", { body: { phone: owner.phone, password: owner.password } })
     expect(blocked.status).toBe(429) // সঠিক পাসওয়ার্ড দিলেও এই মুহূর্তে আটকানো
   })
 

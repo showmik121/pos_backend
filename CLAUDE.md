@@ -21,7 +21,7 @@ Node >= 20.12। লকফাইল নেই (`npm install` ব্যবহা�
 | `server/app.ts` | পুরো API; Web-standard `Request -> Response`, Node ও Deno দুটোতেই একই কোড |
 | `server/index.ts`, `server/config.ts` | লোকাল Node সার্ভার; env থেকে app বানায় |
 | `src/domain/` | বিশুদ্ধ ফাংশন: money (পয়সা), units, expiry, fifo, sale, phone, digits, errors |
-| `src/auth/` | scrypt পাসওয়ার্ড (প্যারামিটারসহ সংরক্ষিত), HS256 JWT, লগইন-ব্যর্থতার রেট লিমিট |
+| `src/auth/` | scrypt পাসওয়ার্ড (প্যারামিটারসহ সংরক্ষিত), HS256 JWT, দুর্বল-পাসওয়ার্ড বাতিল (`common-passwords.ts`) |
 | `src/db/` | `types.ts` (ইন্টারফেস), `pg.ts` (postgres.js), `memory.ts` (টেস্টের জন্য) |
 | `db/migrations/` | SQL স্কিমা, RLS, `pos_app` রোল |
 | `edge/` | `build.mjs` (বান্ডেল), `entry.ts`, `smoke-test.mjs` (Deno) |
@@ -38,6 +38,7 @@ Node >= 20.12। লকফাইল নেই (`npm install` ব্যবহা�
 
 ## ডোমেইন নিয়ম (ভাঙা যাবে না)
 - টাকা **পূর্ণসংখ্যা পয়সায়**, স্টক **পিসে**। কখনো float নয়।
+- লগইন/নিবন্ধনের রেট লিমিট ডাটাবেসে (`auth_attempts` টেবিল, `auth_throttle()` SECURITY DEFINER ফাংশন): ফোন+IP, ফোন, IP আলাদা বাকেট। IP আসে `cf-connecting-ip` → `x-real-ip` → `x-forwarded-for`। `pos_app` রোলের শুধু প্রয়োজনীয় GRANT আছে (DELETE নেই); নতুন টেবিলে স্পষ্ট GRANT লাগবে। মাইগ্রেশন ০০২ লাইভে আগে প্রয়োগ করে তারপর কোড পুশ করতে হবে।
 - বিক্রি **FIFO ব্যাচ** অনুযায়ী, মেয়াদোত্তীর্ণ ব্যাচ বাদ।
 - মোবাইল নম্বর ইংরেজি অঙ্কে স্বাভাবিক করা হয় (`src/domain/phone.ts`, `digits.ts`)।
 - ভুলের বার্তা বাংলায়, `DomainError` দিয়ে।

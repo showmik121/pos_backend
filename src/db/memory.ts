@@ -3,7 +3,9 @@ import { DomainError } from "../domain/errors.js"
 import type { PublicUser, Repo, Store, UserWithHash } from "./types.js"
 
 // টেস্ট ও লোকাল ডেমোর জন্য ইন-মেমরি রিপোজিটরি। pg.ts এর সঙ্গে একই ইন্টারফেস।
-export function createMemoryRepo(): Repo {
+export function createMemoryRepo(opts: { now?: () => number } = {}): Repo {
+  const now = opts.now ?? (() => Date.now())
+  const attempts = new Map<string, number[]>()
   const stores = new Map<string, Store>()
   const users = new Map<string, UserWithHash>()
 
@@ -57,6 +59,21 @@ export function createMemoryRepo(): Repo {
       if (!u || u.storeId !== storeId) return null
       u.active = active
       return publicUser(u)
+    },
+
+    async throttle(bucket, max, windowSeconds) {
+      const cutoff = now() - windowSeconds * 1000
+      const recent = (attempts.get(bucket) ?? []).filter((t) => t > cutoff)
+      if (recent.length >= max) {
+        attempts.set(bucket, recent)
+        return false // আটকে থাকা অবস্থায় নতুন চেষ্টা গোনা হয় না (pg.ts এর মতো)
+      }
+      attempts.set(bucket, [...recent, now()])
+      return true
+    },
+
+    async throttleReset(bucket) {
+      attempts.delete(bucket)
     },
 
     async close() {},

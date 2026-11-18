@@ -10,7 +10,7 @@
                                       └─ app.bundle.js (esbuild, edge/build.mjs)
                                            └─ edge/entry.ts ─► server/config.ts (env পড়ে)
                                                                   └─ server/app.ts  createApp()
-                                                                       ├─ src/auth (scrypt, JWT, রেট লিমিট)
+                                                                       ├─ src/auth (scrypt, JWT, পাসওয়ার্ড-শক্তি, common-passwords)
                                                                        ├─ src/domain (বিশুদ্ধ নিয়ম)
                                                                        └─ src/db/pg.ts ──► PostgreSQL (RLS, pos_app রোল)
 লোকাল: server/index.ts (Node) ─► একই server/app.ts
@@ -28,7 +28,7 @@
 | ডাটাবেস ইন্টারফেস | `src/db/types.ts` (`Repo`) |
 | আসল SQL | `src/db/pg.ts` |
 | স্কিমা, RLS, রোল, অনুমতি | `db/migrations/001_init.sql` |
-| পাসওয়ার্ড / টোকেন / লগইন সীমা | `src/auth/password.ts`, `token.ts`, `rate-limit.ts` |
+| পাসওয়ার্ড / টোকেন / লগইন সীমা | `src/auth/password.ts`, `token.ts`, `common-passwords.ts`; লগইন/নিবন্ধন সীমা `server/app.ts` + DB ফাংশন `auth_throttle` |
 | টাকা, ইউনিট, মেয়াদ, FIFO, বিল | `src/domain/*` |
 | Deno-তে scrypt/JWT যাচাই | `edge/smoke-test.mjs` |
 | CI ও অটো-ডিপ্লয় | `.github/workflows/ci.yml` |
@@ -48,7 +48,7 @@
 - লগইন ব্যর্থতায় নম্বরভিত্তিক সীমা; ব্যবহারকারী না থাকলেও dummy hash যাচাই হয় (সময় দেখে ব্যবহারকারী চেনা কঠিন করতে)।
 
 ## ৬. ডোমেইন নিয়ম
-টাকা পূর্ণসংখ্যা পয়সায়; স্টক পিসে; বিক্রি FIFO ব্যাচে, মেয়াদোত্তীর্ণ বাদ; মেয়াদ মাসের শেষ তারিখ; মোবাইল নম্বর ইংরেজি অঙ্কে স্বাভাবিক। স্কিমায় `products`, `stock_batches`, `stock_movements`, `customers`, `sales`, `sale_items`, `payments`, `store_counters` আছে, **কিন্তু এসবের API রুট এখনো নেই**।
+টাকা পূর্ণসংখ্যা পয়সায়; স্টক পিসে; বিক্রি FIFO ব্যাচে, মেয়াদোত্তীর্ণ বাদ; মেয়াদ মাসের শেষ তারিখ; মোবাইল নম্বর ইংরেজি অঙ্কে স্বাভাবিক। টাকার কলাম DB-তে `bigint` পয়সা (`*_poisha`, মাইগ্রেশন ০০২)। স্কিমায় `products`, `stock_batches`, `stock_movements`, `customers`, `sales`, `sale_items`, `payments`, `store_counters` আছে, **কিন্তু এসবের API রুট এখনো নেই**।
 
 ## ৭. কনভেনশন
 - `src/domain` বিশুদ্ধ (I/O নয়); ডাটাবেস প্রবেশ `Repo` ইন্টারফেসের আড়ালে।
