@@ -7,7 +7,7 @@
 - API: Supabase Edge Function `api`, `https://gaxzkbcomeexlnzquvzf.supabase.co/functions/v1/api/`। স্বাস্থ্য-পরীক্ষা: `/health`।
 - ডেটাবেস: ওই প্রজেক্টের PostgreSQL। অ্যাপ `pos_app` রোলে ঢোকে (RLS প্রযোজ্য); মাইগ্রেশন `postgres` রোলে।
 - ডিপ্লয়: `main`-এ পুশ → CI (টাইপচেক, ইউনিট টেস্ট, Deno বিল্ড) → অটো-ডিপ্লয় → `/health` যাচাই।
-- **ডেটাবেসের মাইগ্রেশন CI-তে চলে না।** `npm run db:migrate` (বা `db-migrate.bat`) হাতে চালাতে হয়।
+- **লাইভ ডেটাবেসের মাইগ্রেশন CI-তে চলে না** (CI শুধু একটি তাজা Postgres-এ মাইগ্রেশন দুইবার চালিয়ে যাচাই করে, লাইভে নয়)। `npm run db:migrate` (বা `db-migrate.bat`) হাতে চালাতে হয়।
 - `[skip ci]` কমিট বার্তায় থাকলে ডিপ্লয় হয় না (শুধু ডক বদলে ব্যবহার করুন)।
 
 ## ২. খারাপ কোড লাইভ হলে (API rollback)
