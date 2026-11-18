@@ -28,7 +28,7 @@ const post = (body) => ({
 })
 
 const checks = [
-  ["GET", "/api/health", undefined, 200],
+  ["GET", "/api/health", undefined, 503], // CI-তে ডাটাবেস নেই: ডেটাবেস-পিং ব্যর্থ হয়ে degraded দেওয়াই প্রত্যাশিত (লাইভে ডাটাবেস থাকলে ২০০)
   ["GET", "/api/v1/me", undefined, 401], // টোকেন নেই
   ["GET", "/api/v1/staff", undefined, 401],
   ["POST", "/api/v1/auth/login", post({ phone: "123", password: "x" }), 400], // ভুল ফোন, ডাটাবেস লাগে না
