@@ -34,6 +34,48 @@ jobs:
       - name: Unit tests (no database needed)
         run: npm run test:unit
 
+  postgres:
+    name: Postgres integration (migrations, RLS, sync)
+    runs-on: ubuntu-latest
+    needs: test
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-admin-password
+          POSTGRES_DB: pos
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # এই ডাটাবেস শুধু এই জবের জন্য, প্রতিবার নতুন। এসব আসল পাসওয়ার্ড নয়।
+      DATABASE_URL_UNPOOLED: postgres://postgres:ci-admin-password@localhost:5432/pos
+      POS_APP_PASSWORD: ci-pos-app-password-1234
+      INTEGRATION_DATABASE_URL: postgres://pos_app:ci-pos-app-password-1234@localhost:5432/pos
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run migrations (fresh database)
+        run: npm run db:migrate
+
+      - name: Re-run migrations (must be a no-op)
+        run: npm run db:migrate
+
+      - name: Integration tests as pos_app (RLS applies)
+        run: npm run test:integration
+
   supabase-edge:
     name: Supabase Edge Function build (Deno)
     runs-on: ubuntu-latest
@@ -66,7 +108,7 @@ jobs:
     name: Deploy API to Supabase
     runs-on: ubuntu-latest
     # শুধু main এ push হলে, এবং টেস্ট ও Edge বিল্ড পাস করার পর।
-    needs: [test, supabase-edge]
+    needs: [test, postgres, supabase-edge]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     # নতুন push অর্ধেক ডিপ্লয় বাতিল না করে অপেক্ষা করে।
     concurrency:

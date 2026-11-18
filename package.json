@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run tests/unit",
     "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:watch": "vitest tests/unit",
     "build:edge": "node edge/build.mjs",
     "db:migrate": "tsx scripts/db-migrate.ts"
