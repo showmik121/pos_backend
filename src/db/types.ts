@@ -1,6 +1,7 @@
 import type { Role } from "../auth/token.js"
 import type { CatalogRepo } from "./catalog.js"
 import type { DuesRepo } from "./dues.js"
+import type { SalesRepo } from "./sales.js"
 import type { StockRepo } from "./stock.js"
 
 export type StoreKind = "pharmacy" | "cosmetics" | "other"
@@ -50,7 +51,7 @@ export interface ClientErrorReport {
   userAgent: string | null
 }
 
-export interface Repo extends CatalogRepo, StockRepo, DuesRepo {
+export interface Repo extends CatalogRepo, StockRepo, DuesRepo, SalesRepo {
   /** ডেটাবেসে পৌঁছানো যায় কি না (স্বাস্থ্য-পরীক্ষার জন্য); না গেলে ছোঁড়ে */
   ping(): Promise<void>
 

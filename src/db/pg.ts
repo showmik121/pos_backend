@@ -2,6 +2,7 @@ import postgres from "postgres"
 import { DomainError } from "../domain/errors.js"
 import { createPgCatalog } from "./pg-catalog.js"
 import { createPgDues } from "./pg-dues.js"
+import { createPgSales } from "./pg-sales.js"
 import { createPgStock } from "./pg-stock.js"
 import type { NewSyncEvent, PublicUser, Repo, Store, SyncEvent, UserWithHash } from "./types.js"
 
@@ -43,6 +44,7 @@ export function createPgRepo(opts: { connectionString: string; max?: number }): 
     ...createPgCatalog(withStore),
     ...createPgStock(withStore),
     ...createPgDues(withStore),
+    ...createPgSales(withStore),
 
     async registerStore({ storeName, storeKind, ownerName, phone, passwordHash }) {
       try {

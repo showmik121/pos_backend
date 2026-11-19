@@ -405,4 +405,72 @@ describe.skipIf(!URL_)("PostgreSQL: আসল ডাটাবেসে", () => {
     expect(dues.json.items.map((r: { balancePoisha: number }) => r.balancePoisha)).toEqual([700])
     expect(dues.json.totalDuePoisha).toBe(700)
   })
+
+  it("বিক্রি API: সমান্তরাল বিক্রিতে স্টক ঋণাত্মক হয় না, একই id একবারই, একই বিল নম্বরে একটিই, দুইবার বাতিলে স্টক একবারই ফেরে", async () => {
+    const s = await shop()
+    const pid = crypto.randomUUID()
+    await call("POST", "/v1/products", { token: s.owner, body: product({ id: pid, name: "প্যারা", pricePoisha: 500, costPoisha: 300 }) })
+    await call("POST", `/v1/products/${pid}/stock-ins`, { token: s.owner, body: rcpt({ qty: 5 }) })
+    const qty = async () => (await call("GET", `/v1/products/${pid}`, { token: s.owner })).json.product.stockQty as number
+    const sale = (no: number, over: Record<string, unknown> = {}) => ({
+      id: crypto.randomUUID(), no, prefix: "A", lines: [{ productId: pid, qty: 1 }], payments: [{ method: "cash", amount: 500 }], ...over,
+    })
+
+    // ৮টি সমান্তরাল ১-পিসের বিক্রি, স্টক ৫: ঠিক ৫টি সফল, বাকিগুলো ৪০৯ insufficient_stock
+    const racing = await Promise.all(Array.from({ length: 8 }, (_, i) => call("POST", "/v1/sales", { token: s.staff, body: sale(2001 + i) })))
+    expect(racing.filter((r) => r.status === 201)).toHaveLength(5)
+    expect(racing.filter((r) => r.status === 409).every((r) => r.json.error.code === "insufficient_stock")).toBe(true)
+    expect(await qty()).toBe(0)
+
+    // একই id সমান্তরালে: একটি ২০১, বাকিগুলো ২০০ (স্টকে ৫ ফিরিয়ে দেখি)
+    await call("POST", `/v1/products/${pid}/stock-ins`, { token: s.owner, body: rcpt({ qty: 10, batchNo: "B2" }) })
+    const same = sale(3001)
+    const echo = await Promise.all(Array.from({ length: 4 }, () => call("POST", "/v1/sales", { token: s.staff, body: same })))
+    expect(echo.map((r) => r.status).sort()).toEqual([200, 200, 200, 201])
+    expect(await qty()).toBe(9)
+    expect((await call("POST", "/v1/sales", { token: s.staff, body: { ...same, lines: [{ productId: pid, qty: 2 }] } })).json.error.code).toBe("id_conflict")
+
+    // একই (উপসর্গ, নম্বর), ভিন্ন id: একটিই টেকে
+    const twins = await Promise.all([call("POST", "/v1/sales", { token: s.staff, body: sale(4001) }), call("POST", "/v1/sales", { token: s.staff, body: sale(4001) })])
+    expect(twins.map((r) => r.status).sort()).toEqual([201, 409])
+    expect(twins.find((r) => r.status === 409)!.json.error.code).toBe("duplicate_bill_no")
+    expect(await qty()).toBe(8)
+
+    // দুইবার সমান্তরাল বাতিল: একটি ২০০, অন্যটি ৪০৯; স্টক একবারই ফেরে
+    const target = echo.find((r) => r.status === 201)!.json.sale.id as string
+    const voids = await Promise.all([1, 2].map(() => call("POST", `/v1/sales/${target}/void`, { token: s.owner, body: { reason: "ভুল" } })))
+    expect(voids.map((r) => r.status).sort()).toEqual([200, 409])
+    expect(await qty()).toBe(9)
+    expect((await call("GET", `/v1/sales/${target}`, { token: s.staff })).json.sale.voided).toMatchObject({ by: "মালিক", reason: "ভুল" })
+  })
+
+  it("বিক্রি API: বাকির বিল খাতায় লেখে ও বাতিলে ফেরায়; অফলাইন বিলে স্টক ঋণাত্মক ও oversold; অন্য দোকানে অদৃশ্য", async () => {
+    const s = await shop()
+    const other = await shop()
+    const pid = crypto.randomUUID()
+    const cid = crypto.randomUUID()
+    await call("POST", "/v1/products", { token: s.owner, body: product({ id: pid, name: "ক্রিম", pricePoisha: 1000, costPoisha: 600 }) })
+    await call("POST", `/v1/products/${pid}/stock-ins`, { token: s.owner, body: rcpt({ qty: 3, batchNo: "C1", costPoisha: 600 }) })
+    await call("POST", "/v1/customers", { token: s.owner, body: { id: cid, name: "রহিম", phone: "" } })
+
+    const due = await call("POST", "/v1/sales", { token: s.staff, body: { id: crypto.randomUUID(), no: 1001, prefix: "A", customerId: cid, lines: [{ productId: pid, qty: 2 }], payments: [{ method: "cash", amount: 500 }] } })
+    expect(due.status).toBe(201)
+    expect(due.json.sale).toMatchObject({ total: 2000, due: 1500, customerName: "রহিম" })
+    expect(due.json.sale.lines[0].allocations[0].costPoisha).toBeNull() // স্টাফের কাছে গোপন
+    expect((await call("GET", `/v1/customers/${cid}`, { token: s.owner })).json.customer.balancePoisha).toBe(1500)
+    const noCustomer = await call("POST", "/v1/sales", { token: s.staff, body: { id: crypto.randomUUID(), no: 1002, prefix: "A", lines: [{ productId: pid, qty: 1 }], payments: [] } })
+    expect([noCustomer.status, noCustomer.json.error.code]).toEqual([400, "customer_required"])
+
+    const off = await call("POST", "/v1/sales", { token: s.staff, body: { id: crypto.randomUUID(), no: 1001, prefix: "B", offline: true, at: "2026-11-01T10:00:00.000Z", lines: [{ productId: pid, qty: 4, unitPrice: 900 }], payments: [{ method: "cash", amount: 3600 }] } })
+    expect(off.status).toBe(201)
+    expect(off.json.sale).toMatchObject({ oversold: true, at: "2026-11-01T10:00:00.000Z", total: 3600 })
+    expect((await call("GET", `/v1/products/${pid}`, { token: s.owner })).json.product.stockQty).toBe(-3)
+
+    const voided = await call("POST", `/v1/sales/${due.json.sale.id}/void`, { token: s.owner, body: { reason: "ভুল বিল" } })
+    expect(voided.json).toMatchObject({ restoredQty: 2, lostQty: 0, refundPoisha: 500 })
+    expect((await call("GET", `/v1/customers/${cid}`, { token: s.owner })).json.customer.balancePoisha).toBe(0)
+    expect((await call("GET", "/v1/sales", { token: s.owner })).json.items.map((x: { no: number }) => x.no)).toEqual([1001, 1001])
+    expect((await call("GET", `/v1/sales/${due.json.sale.id}`, { token: other.owner })).status).toBe(404)
+    expect((await call("GET", "/v1/sales", { token: other.owner })).json.items).toEqual([])
+  })
 })

@@ -13,12 +13,10 @@ export interface Allocation {
   qty: number
 }
 
-// FIFO/FEFO: যে ব্যাচের মেয়াদ আগে শেষ হবে সেটি আগে বিক্রি হয়। মেয়াদ-না-থাকা ব্যাচ সবার শেষে।
-// মেয়াদোত্তীর্ণ ব্যাচ থেকে কখনো বিক্রি হয় না। ফেরত: [{ batchId, qty }] — qty পিসে।
-export function allocateFifo(batches: Batch[], qtyNeeded: number, today: string): Allocation[] {
-  requirePositiveInt(qtyNeeded, "পরিমাণ")
 
-  const usable = batches
+/** বিক্রি করা যায় এমন ব্যাচ (মেয়াদোত্তীর্ণ ও শূন্য বাদ), আগে মেয়াদ শেষ হওয়াটা আগে; মেয়াদ-না-থাকা সবার শেষে */
+export function sellableBatches<T extends Batch>(batches: readonly T[], today: string): T[] {
+  return batches
     .filter((b) => b.qtyRemaining > 0 && classifyExpiry(b.expiryDate ?? null, today) !== "expired")
     .slice()
     .sort((a, b) => {
@@ -29,6 +27,14 @@ export function allocateFifo(batches: Batch[], qtyNeeded: number, today: string)
       if (!a.expiryDate && b.expiryDate) return 1
       return String(a.receivedAt ?? "").localeCompare(String(b.receivedAt ?? ""))
     })
+}
+
+// FIFO/FEFO: যে ব্যাচের মেয়াদ আগে শেষ হবে সেটি আগে বিক্রি হয়। মেয়াদ-না-থাকা ব্যাচ সবার শেষে।
+// মেয়াদোত্তীর্ণ ব্যাচ থেকে কখনো বিক্রি হয় না। ফেরত: [{ batchId, qty }] — qty পিসে।
+export function allocateFifo(batches: readonly Batch[], qtyNeeded: number, today: string): Allocation[] {
+  requirePositiveInt(qtyNeeded, "পরিমাণ")
+
+  const usable = sellableBatches(batches, today)
 
   const available = usable.reduce((s, b) => s + b.qtyRemaining, 0)
   if (available < qtyNeeded) {

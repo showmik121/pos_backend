@@ -23,6 +23,14 @@ type BatchRec = Batch & { removed?: Removed }
 
 export interface MemoryStock extends StockRepo {
   qtyOf(storeId: string, productId: string): number
+  /** বিক্রি-স্তর (sales) একই ব্যাচ ব্যবহার করে */
+  internals: {
+    /** সরানো হয়নি এমন ব্যাচ */
+    liveBatches(storeId: string, productId: string): Batch[]
+    isLive(storeId: string, batchId: string): boolean
+    adjust(storeId: string, batchId: string, delta: number): void
+    insert(storeId: string, batch: Batch): void
+  }
 }
 
 export function createMemoryStock(deps: {
@@ -59,6 +67,19 @@ export function createMemoryStock(deps: {
 
   return {
     qtyOf,
+
+    internals: {
+      liveBatches: (s, p) => live(s).filter((b) => b.productId === p).map(strip),
+      isLive: (s, id) => {
+        const b = shop(batches, s).get(id)
+        return b !== undefined && !b.removed
+      },
+      adjust(s, id, delta) {
+        const b = shop(batches, s).get(id)
+        if (b) shop(batches, s).set(id, { ...b, qtyRemaining: b.qtyRemaining + delta })
+      },
+      insert: (s, b) => void shop(batches, s).set(b.id, b),
+    },
 
     async stockIn(storeId, userId, cmd: StockInCommand) {
       const product = await deps.catalog.getProduct(storeId, cmd.productId)
