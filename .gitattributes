@@ -1,0 +1,5 @@
+# Golden-fixture files are hashed (tests/fixtures/domain/fixtures.lock). They must be LF on every OS,
+# otherwise `core.autocrlf=true` (the Windows default) changes the bytes and the golden-lock test fails on a fresh clone.
+tests/fixtures/** text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
