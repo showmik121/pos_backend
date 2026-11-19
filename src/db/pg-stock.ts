@@ -76,7 +76,7 @@ async function readBatch(tx: Tx, storeId: string, id: string): Promise<Batch | n
 async function readRemoval(tx: Tx, storeId: string, batchId: string): Promise<RemovalEntry> {
   const rows = await tx<RemovalRow[]>`
     SELECT b.id, b.product_id, p.name AS product_name, b.batch_no, to_char(b.expiry_date, 'YYYY-MM-DD') AS expiry_date,
-           b.cost_price_poisha, b.removed_reason, b.removed_at, u.name AS by_name, -m.qty_delta AS qty
+           b.cost_price_poisha, b.removed_reason, b.removed_at, coalesce(u.name, b.removed_by_name) AS by_name, -m.qty_delta AS qty
     FROM stock_batches b
     LEFT JOIN products p ON p.store_id = b.store_id AND p.id = b.product_id
     LEFT JOIN users u ON u.store_id = b.store_id AND u.id = b.removed_by
@@ -198,7 +198,7 @@ export function createPgStock(withStore: WithStore): StockRepo {
         const to = range.to ? tx`AND b.removed_at <= ${range.to}::timestamptz` : tx``
         const rows = await tx<RemovalRow[]>`
           SELECT b.id, b.product_id, p.name AS product_name, b.batch_no, to_char(b.expiry_date, 'YYYY-MM-DD') AS expiry_date,
-                 b.cost_price_poisha, b.removed_reason, b.removed_at, u.name AS by_name, -m.qty_delta AS qty
+                 b.cost_price_poisha, b.removed_reason, b.removed_at, coalesce(u.name, b.removed_by_name) AS by_name, -m.qty_delta AS qty
           FROM stock_batches b
           LEFT JOIN products p ON p.store_id = b.store_id AND p.id = b.product_id
           LEFT JOIN users u ON u.store_id = b.store_id AND u.id = b.removed_by

@@ -104,3 +104,10 @@ Node >= 20.12। লকফাইল নেই (`npm install` ব্যবহা�
 - `POST /v1/sales/{id}/void` `{reason}` শুধু মালিক: স্টক ফেরে (সরানো ব্যাচের অংশ ফেরে না → `lostQty`), বাকির খাতায় `void` এন্ট্রি (কাস্টমার পরে শোধ করে থাকলে শুধু বাকি-থাকা অংশ), উত্তরে `refundPoisha`; আবার বাতিলে ৪০৯ `already_voided`।
 - `GET /v1/sales?from&to&customerId&limit&cursor` (বিক্রির সময়ে নতুন আগে; বাতিল বিলও থাকে), `GET /v1/sales/{id}`।
 - লাইন `sale_items`, ব্যাচ-ভাগ `sale_allocations` (অপরিবর্তনীয়), পেমেন্ট `payments(seq)`; `sales`-এ শুধু `voided*` কলাম বদলানো যায়। লক-ক্রম (create ও void একই): বিল → পণ্য (id ক্রমে) → ব্যাচ-সারি (পণ্য, id ক্রমে) → কাস্টমার-সারি। মাইগ্রেশন ০০৮ হাতে প্রয়োগের আগে `pg_dump` (ডেটা থাকলে guard থামায়)।
+
+## প্রজেক্টর (ইভেন্ট → টেবিল)
+- `src/domain/projection.ts` (বিশুদ্ধ `toCommand`) ইভেন্টকে যাচাই করে কমান্ডে বদলায়; `src/db/pg-projection.ts` কমান্ড টেবিলে বসায়। `project(storeId, events)` একটি লেনদেনে চলে, advisory lock `proj:<store>`।
+- অবস্থা `projection_events` (applied/deferred/ignored/failed); শেষ-বদল-জেতে ঘড়ি `projection_clocks`। নির্ভরতা না এলে `deferred` থাকে, পরের কলে `sync_events` থেকে আবার পড়া হয়।
+- প্রতি ইভেন্ট সেভপয়েন্টে: একটি ব্যর্থ হলে `failed` লেখা হয়, বাকিরা আটকায় না। একই ইভেন্ট দুবার দিলে `duplicate`।
+- ইভেন্টে শুধু নাম আছে, user id নেই, তাই `cashier_name`/`voided_by_name`/`by_name`/`removed_by_name` কলাম (মাইগ্রেশন ০০৯); পড়ার সময় `coalesce(users.name, ...)`।
+- এখনো কোনো রাউট প্রজেক্টর ডাকে না (S8 `data_mode`-এ জোড়া হবে); লাইভে ০০৭–০০৯ বসানো বাকি।

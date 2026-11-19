@@ -59,9 +59,9 @@ interface PaymentRow {
 const UNIQUE_VIOLATION = "23505"
 
 const SALE_SELECT = (tx: Tx) => tx`
-  SELECT s.id, s.bill_no, s.bill_prefix, s.sold_at, cu.name AS cashier,
+  SELECT s.id, s.bill_no, s.bill_prefix, s.sold_at, coalesce(cu.name, s.cashier_name) AS cashier,
          s.subtotal_poisha, s.line_discount_poisha, s.bill_discount_poisha, s.total_poisha, s.change_poisha, s.due_poisha,
-         s.customer_id, c.name AS customer_name, s.oversold, s.voided, s.voided_at, vu.name AS voided_by_name, s.void_reason, s.request_hash
+         s.customer_id, c.name AS customer_name, s.oversold, s.voided, s.voided_at, coalesce(vu.name, s.voided_by_name) AS voided_by_name, s.void_reason, s.request_hash
   FROM sales s
   LEFT JOIN users cu ON cu.store_id = s.store_id AND cu.id = s.created_by
   LEFT JOIN users vu ON vu.store_id = s.store_id AND vu.id = s.voided_by
@@ -129,7 +129,7 @@ async function readSale(tx: Tx, storeId: string, id: string): Promise<{ sale: Sa
 
 const lockKey = (tx: Tx, key: string) => tx`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`
 /** পণ্যের স্টক-বদল ক্রমে চলে (pg-stock.ts এর stockIn-এর একই কী) */
-async function lockProducts(tx: Tx, storeId: string, productIds: readonly string[]) {
+export async function lockProducts(tx: Tx, storeId: string, productIds: readonly string[]) {
   for (const id of [...productIds].sort()) await lockKey(tx, `stock:${storeId}:${id}`)
 }
 
