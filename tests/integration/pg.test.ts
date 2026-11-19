@@ -219,4 +219,85 @@ describe.skipIf(!URL_)("PostgreSQL: আসল ডাটাবেসে", () => {
       asStore(b.storeId, (tx) => tx`INSERT INTO stock_batches (id, store_id, product_id, qty_remaining) VALUES (${crypto.randomUUID()}, ${b.storeId}, ${pid}, 1)`),
     ).rejects.toThrow(/foreign key/)
   })
+
+  // ---- পণ্য API (আসল PostgreSQL, RLS ও ইনডেক্সসহ)
+  const product = (over: Record<string, unknown> = {}) => ({
+    id: crypto.randomUUID(),
+    name: `পণ্য-${Math.random().toString(36).slice(2, 8)}`,
+    unit: "strip",
+    cartonSize: 10,
+    costPoisha: 300,
+    pricePoisha: 500,
+    minStock: 5,
+    category: "ওষুধ",
+    open: false,
+    barcodes: [{ code: `BC-${crypto.randomUUID()}`, packSize: 1 }],
+    ...over,
+  })
+
+  it("পণ্য API: তৈরি, ইডেমপোটেন্ট, সমান্তরাল একই id, ভিন্ন বডিতে ৪০৯, বারকোড সংঘাত", async () => {
+    const s = await shop()
+    const p = product()
+    const [r1, r2] = await Promise.all([
+      call("POST", "/v1/products", { token: s.owner, body: p }),
+      call("POST", "/v1/products", { token: s.owner, body: p }),
+    ])
+    expect([r1.status, r2.status].sort()).toEqual([200, 201])
+    expect((await call("POST", "/v1/products", { token: s.owner, body: { ...p, pricePoisha: 1 } })).json.error.code).toBe("id_conflict")
+    const dup = await call("POST", "/v1/products", { token: s.owner, body: product({ barcodes: p.barcodes }) })
+    expect(dup.status).toBe(409)
+    expect(dup.json.error.code).toBe("duplicate_barcode")
+    const got = await call("GET", `/v1/products/${p.id}`, { token: s.owner })
+    expect(got.json.product).toMatchObject({ id: p.id, pricePoisha: 500, costPoisha: 300, cartonSize: 10, stockQty: 0, barcodes: p.barcodes })
+  })
+
+  it("পণ্য API: দুই দোকানে একই id ও একই বারকোড আলাদা; অন্যের পণ্য ৪০৪; কর্মচারীর কাছে ক্রয়মূল্য null", async () => {
+    const a = await shop()
+    const b = await shop()
+    const id = crypto.randomUUID()
+    const code = `SH-${crypto.randomUUID()}`
+    const pa = product({ id, name: "এ", barcodes: [{ code, packSize: 1 }] })
+    const pb = product({ id, name: "বি", barcodes: [{ code, packSize: 1 }] })
+    expect((await call("POST", "/v1/products", { token: a.owner, body: pa })).status).toBe(201)
+    expect((await call("GET", `/v1/products/${id}`, { token: b.owner })).status).toBe(404)
+    expect((await call("PATCH", `/v1/products/${id}`, { token: b.owner, body: { name: "হাইজ্যাক" } })).status).toBe(404)
+    expect((await call("POST", "/v1/products", { token: b.owner, body: pb })).status).toBe(201)
+    expect((await call("GET", `/v1/products/${id}`, { token: a.owner })).json.product.name).toBe("এ")
+    expect((await call("GET", `/v1/products?barcode=${code}`, { token: b.owner })).json.items.map((x: { name: string }) => x.name)).toEqual(["বি"])
+    expect((await call("GET", `/v1/products/${id}`, { token: a.staff })).json.product.costPoisha).toBeNull()
+  })
+
+  it("পণ্য API: তালিকা পেজিনেশন (প্রতিটি একবার), খোঁজা, PATCH ও stale", async () => {
+    const s = await shop()
+    const made: string[] = []
+    for (let i = 0; i < 5; i++) {
+      const p = product({ name: i % 2 ? `ক্রিম ${i}` : `সিরাপ ${i}`, category: i % 2 ? "কসমেটিক্স" : "ওষুধ" })
+      made.push(p.id)
+      expect((await call("POST", "/v1/products", { token: s.owner, body: p })).status).toBe(201)
+    }
+    const seen: string[] = []
+    let cursor: string | null = null
+    for (let page = 0; page < 6; page++) {
+      const r = await call("GET", `/v1/products?limit=2${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`, { token: s.owner })
+      expect(r.status).toBe(200)
+      seen.push(...r.json.items.map((x: { id: string }) => x.id))
+      cursor = r.json.nextCursor
+      if (!cursor) break
+    }
+    expect(new Set(seen)).toEqual(new Set(made))
+    expect(seen).toHaveLength(5)
+    expect((await call("GET", `/v1/products?q=${encodeURIComponent("ক্রিম")}`, { token: s.owner })).json.items).toHaveLength(2)
+    expect((await call("GET", `/v1/products?category=${encodeURIComponent("ওষুধ")}`, { token: s.owner })).json.items).toHaveLength(3)
+    const target = made[0]!
+    const cur = (await call("GET", `/v1/products/${target}`, { token: s.owner })).json.product
+    const stale = await call("PATCH", `/v1/products/${target}`, { token: s.owner, body: { name: "নতুন", expectedUpdatedAt: "2000-01-01T00:00:00.000Z" } })
+    expect(stale.json.error.code).toBe("stale")
+    const ok = await call("PATCH", `/v1/products/${target}`, { token: s.owner, body: { name: "নতুন", pricePoisha: 650, expectedUpdatedAt: cur.updatedAt } })
+    expect(ok.status).toBe(200)
+    expect(ok.json.product).toMatchObject({ name: "নতুন", pricePoisha: 650, costPoisha: 300 })
+    const withCodes = await call("PATCH", `/v1/products/${target}`, { token: s.owner, body: { barcodes: [{ code: `N-${target}`, packSize: 1 }, { code: `C-${target}`, packSize: 10 }] } })
+    expect(withCodes.json.product.barcodes).toHaveLength(2)
+    const add = await call("POST", `/v1/products/${target}/barcodes`, { token: s.owner, body: { code: `C-${target}`, packSize: 10 } })
+    expect(add.status).toBe(200)
+  })
 })

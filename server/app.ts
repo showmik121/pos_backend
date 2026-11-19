@@ -2,6 +2,8 @@ import { DomainError } from "../src/domain/errors.js"
 import { normalizePhone } from "../src/domain/phone.js"
 import { hashPassword, verifyPassword, dummyHash } from "../src/auth/password.js"
 import { signToken, verifyToken, assertSecret } from "../src/auth/token.js"
+import { readJson, UUID as UUID_PART, type Result, type RouteCtx } from "./http.js"
+import { productRoutes } from "./routes/products.js"
 import type { ClientErrorReport, NewSyncEvent, PublicUser, Repo, StoreKind } from "../src/db/types.js"
 
 // Web-standard (Request → Response) অ্যাপ: একই কোড Node (লোকাল) ও Supabase Edge Function (Deno) এ চলে।
@@ -13,12 +15,14 @@ const STATUS: Record<string, number> = {
   forbidden: 403,
   not_found: 404,
   phone_taken: 409,
+  id_conflict: 409,
+  duplicate_barcode: 409,
+  stale: 409,
   too_many_attempts: 429,
   payload_too_large: 413,
 }
 const statusFor = (code: string) => STATUS[code] ?? 400
 
-const MAX_BODY = 100 * 1024
 // সিংক: এক অনুরোধে সর্বোচ্চ ইভেন্ট, প্রতিটির সর্বোচ্চ আকার, শুধু মালিকের ইভেন্ট
 const SYNC_MAX_BODY = 600 * 1024
 const SYNC_MAX_EVENTS = 100
@@ -29,6 +33,7 @@ const HEALTH_CACHE_MS = 5_000
 const HEALTH_TIMEOUT_MS = 3_000
 const SYNC_OWNER_ONLY = new Set(["sale_voided", "settings_updated"])
 const SYNC_LIMIT: Limit = { max: 600, window: 60 }
+const REST_LIMIT: Limit = { max: 600, window: 60 } // দোকান-ভিত্তিক, REST (পণ্য/স্টক/বিক্রি) অনুরোধ
 const KIND_RE = /^[a-z][a-z0-9_]{1,39}$/
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/
@@ -71,7 +76,7 @@ function parseClientError(b: Record<string, unknown>, storeId: string | null, us
 }
 
 const STORE_KINDS: StoreKind[] = ["pharmacy", "cosmetics", "other"]
-const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+const UUID = UUID_PART
 
 function cleanText(value: unknown, name: string, opts: { max?: number } = {}): string {
   const max = opts.max ?? 120
@@ -100,21 +105,6 @@ const LOGIN_IP: Limit = { max: 60, window: 15 * 60 } // এক IP থেকে �
 const REGISTER_IP: Limit = { max: 5, window: 60 * 60 }
 const REGISTER_ALL: Limit = { max: 200, window: 60 * 60 }
 
-async function readJson(req: Request, maxBody = MAX_BODY): Promise<Record<string, unknown>> {
-  const declared = Number(req.headers.get("content-length") ?? 0)
-  if (declared > maxBody) throw new DomainError("payload_too_large", "অনুরোধ খুব বড়")
-  const text = await req.text()
-  if (text.length > maxBody) throw new DomainError("payload_too_large", "অনুরোধ খুব বড়")
-  if (!text) return {}
-  try {
-    const body: unknown = JSON.parse(text)
-    if (body === null || typeof body !== "object" || Array.isArray(body)) throw new Error("not object")
-    return body as Record<string, unknown>
-  } catch {
-    throw new DomainError("invalid_json", "JSON সঠিক নয়")
-  }
-}
-
 export interface AppOptions {
   repo: Repo
   jwtSecret: string
@@ -128,8 +118,6 @@ export interface AppOptions {
 export interface App {
   fetch(req: Request): Promise<Response>
 }
-
-type Result = { status: number; body: unknown }
 
 export function createApp(opts: AppOptions): App {
   const { repo, jwtSecret, ttlSeconds = 43_200, corsOrigins = [], now = () => Date.now(), healthTimeoutMs = HEALTH_TIMEOUT_MS } = opts
@@ -307,6 +295,19 @@ export function createApp(opts: AppOptions): App {
       if (!updated) throw new DomainError("not_found", "স্টাফ পাওয়া যায়নি")
       return { status: 200, body: { user: updated } }
     }
+
+    // REST: পণ্য, স্টক, কাস্টমার, বিক্রি (routes/*.ts)
+    const ctx: RouteCtx = {
+      req,
+      key,
+      repo,
+      authenticate: () => authenticate(req),
+      rateLimit: async (user) => {
+        if (!(await withinLimits([[`rest:s:${user.storeId}`, REST_LIMIT]]))) throw tooMany()
+      },
+    }
+    const rest = await productRoutes(ctx)
+    if (rest) return rest
 
     throw new DomainError("not_found", "পাওয়া যায়নি")
   }
