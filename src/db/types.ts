@@ -37,6 +37,16 @@ export interface SyncEvent extends NewSyncEvent {
 }
 
 // অ্যাপ শুধু এই ইন্টারফেস চেনে। দুটি বাস্তবায়ন আছে: pg.ts (আসল PostgreSQL/Supabase) ও memory.ts (টেস্ট)।
+export interface ClientErrorReport {
+  storeId: string | null
+  kind: "render" | "window" | "rejection"
+  message: string
+  stack: string | null
+  path: string | null
+  appVersion: string | null
+  userAgent: string | null
+}
+
 export interface Repo {
   /** ডেটাবেসে পৌঁছানো যায় কি না (স্বাস্থ্য-পরীক্ষার জন্য); না গেলে ছোঁড়ে */
   ping(): Promise<void>
@@ -63,6 +73,8 @@ export interface Repo {
   pushEvents(storeId: string, userId: string, deviceId: string, events: NewSyncEvent[]): Promise<string[]>
   /** seq > after ইভেন্ট ক্রমে; limit-এর বেশি থাকলে hasMore। */
   pullEvents(storeId: string, after: number, limit: number): Promise<{ events: SyncEvent[]; lastSeq: number; hasMore: boolean }>
+  /** ফ্রন্টএন্ডের ক্র্যাশ রিপোর্ট রাখে (একই ত্রুটি আবার এলে গোনা বাড়ে); দোকানের ডেটার সঙ্গে সম্পর্ক নেই */
+  recordClientError(report: ClientErrorReport): Promise<void>
   /**
    * হার-সীমা: bucket-এ একটি চেষ্টা নথিভুক্ত করে। সীমা (windowSeconds-এর মধ্যে max বার) পেরোলে false।
    * আটকে থাকা অবস্থায় নতুন চেষ্টা গোনা হয় না। দোকানের ডেটার সঙ্গে সম্পর্ক নেই।
