@@ -83,3 +83,9 @@ Node >= 20.12। লকফাইল নেই (`npm install` ব্যবহা�
 - তৈরি = `POST` + ক্লায়েন্টের `id` (UUID): প্রথমবার ২০১, একই বডি আবার ২০০, ভিন্ন বডি ৪০৯ `id_conflict`। বারকোড দোকানের মধ্যে ইউনিক (৪০৯ `duplicate_barcode`)। তালিকা keyset (`limit` ১–২০০, `cursor` অস্বচ্ছ)।
 - কর্মচারীর উত্তরে `costPoisha` সবসময় `null` (ক্রয়মূল্য মালিক-মাত্র); লেখায় কর্মচারী দিতে পারে।
 - **মাইগ্রেশন ০০৬ লাইভে প্রয়োগ না হলে এই রুটগুলো লাইভে ব্যর্থ হবে**: আগে `pg_dump`, তারপর ০০৬ হাতে চালান, তারপর কোড মার্জ।
+
+## REST: স্টক (জমা, ব্যাচ, সরানো)
+- `POST /v1/products/{id}/stock-ins` (মালিক/স্টাফ): body `{id(রসিদ, ইডেমপোটেন্সি কী), qty, unit(piece|carton), batchNo, expiryDate, costPoisha, pricePoisha?, batchId?}`। ফার্মেসিতে ব্যাচ ও মেয়াদ বাধ্যতামূলক (৪২২ `batch_required`/`expiry_required`); কার্টন সাইজ ১ হলে ৪২২ `no_carton`। একই পণ্য+ব্যাচ নম্বর+মেয়াদ একই ব্যাচে মেশে, ফাঁকা নম্বরে প্রতিবার নতুন ব্যাচ। প্রথমবার ২০১, একই রসিদ আবার ২০০, ভিন্ন বডিতে ৪০৯ `id_conflict`। পণ্যের ক্রয়মূল্য (ও দিলে বিক্রয়মূল্য) বদলায়।
+- `GET /v1/batches?productId&status=active|expired|expiring&expiringWithinDays&limit&cursor`: মেয়াদের ক্রমে (মেয়াদহীন শেষে), keyset কার্সর; `expiryClass`/`daysLeft` ঢাকার আজকের তারিখে; স্টাফের কাছে `costPoisha` null।
+- `POST /v1/batches/{id}/removals` ও `GET /v1/batch-removals` শুধু মালিক; কারণ বাধ্যতামূলক (৪২২ `reason_required`); সরানো ব্যাচে স্টক শূন্য ও তালিকা-বহির্ভূত; ক্ষতি = পরিমাণ × ক্রয়মূল্য।
+- একই (দোকান, পণ্য)-র স্টক-বদল `pg_advisory_xact_lock` দিয়ে এক এক করে চলে (FIFO বিক্রির সময়ও একই লক)।

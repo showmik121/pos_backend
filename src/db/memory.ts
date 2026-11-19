@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { DomainError } from "../domain/errors.js"
 import { createMemoryCatalog } from "./memory-catalog.js"
+import { createMemoryStock } from "./memory-stock.js"
 import type { ClientErrorReport, NewSyncEvent, PublicUser, Repo, Store, SyncEvent, UserWithHash } from "./types.js"
 
 // টেস্ট ও লোকাল ডেমোর জন্য ইন-মেমরি রিপোজিটরি। pg.ts এর সঙ্গে একই ইন্টারফেস।
@@ -23,11 +24,13 @@ export function createMemoryRepo(opts: { now?: () => number } = {}): Repo & { pe
     role: u.role,
     active: u.active,
   })
+  const stock = createMemoryStock({ now, catalog, userName: (_s, id) => users.get(id)?.name ?? "অজানা" })
   const phoneTaken = (phone: string) => [...users.values()].some((u) => u.phone === phone)
   const taken = () => new DomainError("phone_taken", "এই নম্বরে আগেই অ্যাকাউন্ট আছে")
 
   return {
     ...catalog,
+    ...stock,
 
     async registerStore({ storeName, storeKind, ownerName, phone, passwordHash }) {
       if (phoneTaken(phone)) throw taken()

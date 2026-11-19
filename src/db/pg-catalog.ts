@@ -64,7 +64,7 @@ async function barcodesOf(tx: Tx, storeId: string, ids: string[]): Promise<Map<s
   return map
 }
 
-async function readOne(tx: Tx, storeId: string, id: string, lock = false): Promise<Product | null> {
+export async function readOne(tx: Tx, storeId: string, id: string, lock = false): Promise<Product | null> {
   if (lock) {
     const held = await tx`SELECT 1 FROM products WHERE store_id = ${storeId} AND id = ${id} FOR UPDATE`
     if (held.length === 0) return null

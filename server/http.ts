@@ -15,6 +15,9 @@ export interface RouteCtx {
   authenticate(): Promise<PublicUser>
   /** দোকান-ভিত্তিক হার-সীমা (পেরোলে too_many_attempts) */
   rateLimit(user: PublicUser): Promise<void>
+  /** মালিক না হলে forbidden */
+  requireOwner(user: PublicUser): void
+  now(): number
 }
 
 export const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"

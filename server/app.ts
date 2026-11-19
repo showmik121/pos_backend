@@ -4,6 +4,7 @@ import { hashPassword, verifyPassword, dummyHash } from "../src/auth/password.js
 import { signToken, verifyToken, assertSecret } from "../src/auth/token.js"
 import { readJson, UUID as UUID_PART, type Result, type RouteCtx } from "./http.js"
 import { productRoutes } from "./routes/products.js"
+import { stockRoutes } from "./routes/stock.js"
 import type { ClientErrorReport, NewSyncEvent, PublicUser, Repo, StoreKind } from "../src/db/types.js"
 
 // Web-standard (Request → Response) অ্যাপ: একই কোড Node (লোকাল) ও Supabase Edge Function (Deno) এ চলে।
@@ -18,6 +19,10 @@ const STATUS: Record<string, number> = {
   id_conflict: 409,
   duplicate_barcode: 409,
   stale: 409,
+  batch_required: 422,
+  expiry_required: 422,
+  no_carton: 422,
+  reason_required: 422,
   too_many_attempts: 429,
   payload_too_large: 413,
 }
@@ -302,11 +307,13 @@ export function createApp(opts: AppOptions): App {
       key,
       repo,
       authenticate: () => authenticate(req),
+      requireOwner,
+      now,
       rateLimit: async (user) => {
         if (!(await withinLimits([[`rest:s:${user.storeId}`, REST_LIMIT]]))) throw tooMany()
       },
     }
-    const rest = await productRoutes(ctx)
+    const rest = (await productRoutes(ctx)) ?? (await stockRoutes(ctx))
     if (rest) return rest
 
     throw new DomainError("not_found", "পাওয়া যায়নি")
