@@ -106,7 +106,7 @@ describe("সিংক: push / pull", () => {
   it("দুই ডিভাইসের ইভেন্ট একই লগে মিশে যায়", async () => {
     const { call, owner, staff } = await ready()
     await call("POST", "/v1/sync/push", { token: owner, body: { deviceId: DEV_A, events: [ev("sale_created", { n: 1 })] } })
-    await call("POST", "/v1/sync/push", { token: staff, body: { deviceId: DEV_B, events: [ev("sale_created", { n: 2 })] } })
+    await call("POST", "/v1/sync/push", { token: staff, body: { deviceId: DEV_B, events: [ev("sale_completed", { n: 2 })] } })
     const pull = await call("GET", "/v1/sync/pull?after=0", { token: owner })
     expect(pull.json.events.map((e: { deviceCode: string }) => e.deviceCode)).toEqual(["A", "B"])
   })
@@ -145,6 +145,27 @@ describe("সিংক: push / pull", () => {
     const denied = await call("POST", "/v1/sync/push", { token: staff, body: { deviceId: DEV_B, events: [v] } })
     expect(denied.status).toBe(403)
     expect((await call("POST", "/v1/sync/push", { token: owner, body: { deviceId: DEV_A, events: [v] } })).status).toBe(200)
+  })
+  it("কর্মচারী মালিক-মাত্র ধরন পাঠাতে পারে না: ব্যাচ সরানো, সেটিংস, বাতিল (REST-এর নিয়মের সাথে মিল)", async () => {
+    const { call, owner, staff } = await ready()
+    for (const kind of ["batch_removed", "settings_updated", "sale_voided"]) {
+      const e = ev(kind, { x: 1 })
+      expect((await call("POST", "/v1/sync/push", { token: staff, body: { deviceId: DEV_B, events: [e] } })).status).toBe(403)
+      expect((await call("POST", "/v1/sync/push", { token: owner, body: { deviceId: DEV_A, events: [e] } })).status).toBe(200)
+    }
+  })
+  it("কর্মচারী অচেনা ধরনের ইভেন্ট পাঠাতে পারে না (ডিফল্ট-নিষেধ); মালিক পারে (ভবিষ্যৎ সামঞ্জস্য)", async () => {
+    const { call, owner, staff } = await ready()
+    const e = ev("brand_new_kind", { x: 1 })
+    expect((await call("POST", "/v1/sync/push", { token: staff, body: { deviceId: DEV_B, events: [e] } })).status).toBe(403)
+    expect((await call("POST", "/v1/sync/push", { token: owner, body: { deviceId: DEV_A, events: [e] } })).status).toBe(200)
+  })
+  it("কর্মচারী দৈনন্দিন ধরনগুলো পাঠাতে পারে: পণ্য, স্টক-জমা, কাস্টমার, বিক্রি, বাকি আদায়", async () => {
+    const { call, staff } = await ready()
+    const kinds = ["product_upserted", "stock_in", "customer_upserted", "sale_completed", "due_received"]
+    const res = await call("POST", "/v1/sync/push", { token: staff, body: { deviceId: DEV_B, events: kinds.map((k) => ev(k, { x: 1 })) } })
+    expect(res.status).toBe(200)
+    expect(res.json.accepted).toHaveLength(kinds.length)
   })
   it("টোকেন ছাড়া push/pull আটকায়; ভুল after বাতিল", async () => {
     const { call, owner } = await ready()

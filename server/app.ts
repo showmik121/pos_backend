@@ -36,7 +36,9 @@ const SYNC_PULL_DEFAULT = 200
 const SYNC_PULL_MAX = 500
 const HEALTH_CACHE_MS = 5_000
 const HEALTH_TIMEOUT_MS = 3_000
-const SYNC_OWNER_ONLY = new Set(["sale_voided", "settings_updated"])
+// কর্মচারী শুধু দৈনন্দিন ধরনগুলো পাঠাতে পারে (সাদা-তালিকা)। বাকি সব (বাতিল, সেটিংস, ব্যাচ সরানো, অচেনা নতুন ধরন) মালিক-মাত্র,
+// যাতে REST-এর মালিক-মাত্র নিয়ম (যেমন ব্যাচ সরানো) সিংক দিয়ে এড়ানো না যায়; নতুন ধরন যোগ করলে এখানে সচেতনভাবে খুলতে হবে।
+const SYNC_STAFF_KINDS = new Set(["product_upserted", "stock_in", "customer_upserted", "sale_completed", "due_received"])
 const SYNC_LIMIT: Limit = { max: 600, window: 60 }
 const REST_LIMIT: Limit = { max: 600, window: 60 } // দোকান-ভিত্তিক, REST (পণ্য/স্টক/বিক্রি) অনুরোধ
 const KIND_RE = /^[a-z][a-z0-9_]{1,39}$/
@@ -239,7 +241,7 @@ export function createApp(opts: AppOptions): App {
       const b = await readJson(req, SYNC_MAX_BODY)
       const deviceId = parseDeviceId(b.deviceId)
       const events = parseEvents(b.events)
-      if (user.role !== "owner" && events.some((e) => SYNC_OWNER_ONLY.has(e.kind))) {
+      if (user.role !== "owner" && events.some((e) => !SYNC_STAFF_KINDS.has(e.kind))) {
         throw new DomainError("forbidden", "এটি শুধু মালিক করতে পারবেন")
       }
       const accepted = await repo.pushEvents(user.storeId, user.id, deviceId, events)
