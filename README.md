@@ -58,7 +58,7 @@ npm run typecheck
 node edge/build.mjs  # Edge বান্ডেল (supabase/functions/api/app.bundle.js)
 ```
 
-`npm install` প্রথমবার `package-lock.json` বানাবে — সেটি commit করে দিলে ভালো।
+`package-lock.json` কমিট করা আছে; পরিষ্কার ক্লোনে `npm ci` চালালে হুবহু একই সংস্করণ বসে (CI-ও তাই করে)।
 
 ## যা এখনও আসল পরিবেশে যাচাই হয়নি
 

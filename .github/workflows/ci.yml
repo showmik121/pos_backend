@@ -26,7 +26,7 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Type check
         run: npm run typecheck
@@ -65,7 +65,7 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Run migrations (fresh database)
         run: npm run db:migrate
@@ -92,7 +92,7 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Build the Edge Function bundle
         run: node edge/build.mjs
@@ -132,7 +132,7 @@ jobs:
 
       - name: Install dependencies
         if: env.SUPABASE_ACCESS_TOKEN != ''
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Build the Edge Function bundle
         if: env.SUPABASE_ACCESS_TOKEN != ''

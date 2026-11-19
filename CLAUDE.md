@@ -14,7 +14,7 @@ npm run test:integration  # আসল Postgres + pos_app লাগে (INTEGRATI
 npm run build:edge   # esbuild বান্ডেল -> supabase/functions/api/app.bundle.js
 npm run db:migrate   # db/migrations/*.sql চালায়
 ```
-Node >= 20.12। লকফাইল নেই (`npm install` ব্যবহার হয়)। কমিটের আগে typecheck + test পাস করান।
+Node >= 20.12। `package-lock.json` কমিট করা আছে এবং CI `npm ci` চালায়; নতুন প্যাকেজ যোগ করলে `npm install <pkg>` চালিয়ে লকফাইলসহ কমিট করুন (`node_modules` কখনো কমিট নয়)। কমিটের আগে typecheck + test পাস করান।
 
 ## ফোল্ডার
 | পথ | কাজ |
