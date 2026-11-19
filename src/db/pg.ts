@@ -1,5 +1,6 @@
 import postgres from "postgres"
 import { DomainError } from "../domain/errors.js"
+import { createPgCatalog } from "./pg-catalog.js"
 import type { NewSyncEvent, PublicUser, Repo, Store, SyncEvent, UserWithHash } from "./types.js"
 
 // PostgreSQL (Supabase) রিপোজিটরি।
@@ -37,6 +38,8 @@ export function createPgRepo(opts: { connectionString: string; max?: number }): 
   }
 
   return {
+    ...createPgCatalog(withStore),
+
     async registerStore({ storeName, storeKind, ownerName, phone, passwordHash }) {
       try {
         const rows = await sql<{ storeId: string; userId: string }[]>`

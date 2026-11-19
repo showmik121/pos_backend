@@ -77,3 +77,9 @@ Node >= 20.12। লকফাইল নেই (`npm install` ব্যবহা�
 ## গোল্ডেন ফিক্সচার (ফ্রন্টএন্ডের সাথে আচরণ এক)
 - `tests/fixtures/domain/*.json` ফ্রন্টএন্ড (`pos_fontend/tests/fixtures/domain`) থেকে হুবহু কপি; `tests/unit/golden.test.ts` চালায় ও `fixtures.lock` (SHA-256) মেলায়।
 - `src/domain/{cart,fifo,expiry,units}.ts` ফ্রন্টএন্ডের `src/lib/domain`-এর সমতুল্য। সত্য-উৎস ফ্রন্টএন্ড: আগে সেখানে বদলান, তারপর JSON ও `fixtures.lock` এখানে কপি করে কোড মেলান।
+
+## REST: পণ্য (`/v1/products`)
+- রুট `server/routes/products.ts`; যাচাই `src/domain/product.ts`; রিপো `src/db/catalog.ts` (ইন্টারফেস), `pg-catalog.ts`, `memory-catalog.ts`। নতুন রুট-ফাইল `server/app.ts`-এর `route()` শেষে জোড়া হয়, `RouteCtx` (`server/http.ts`) দিয়ে।
+- তৈরি = `POST` + ক্লায়েন্টের `id` (UUID): প্রথমবার ২০১, একই বডি আবার ২০০, ভিন্ন বডি ৪০৯ `id_conflict`। বারকোড দোকানের মধ্যে ইউনিক (৪০৯ `duplicate_barcode`)। তালিকা keyset (`limit` ১–২০০, `cursor` অস্বচ্ছ)।
+- কর্মচারীর উত্তরে `costPoisha` সবসময় `null` (ক্রয়মূল্য মালিক-মাত্র); লেখায় কর্মচারী দিতে পারে।
+- **মাইগ্রেশন ০০৬ লাইভে প্রয়োগ না হলে এই রুটগুলো লাইভে ব্যর্থ হবে**: আগে `pg_dump`, তারপর ০০৬ হাতে চালান, তারপর কোড মার্জ।
