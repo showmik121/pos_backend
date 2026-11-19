@@ -182,7 +182,9 @@ function mapSale(raw: unknown, ledgerRaw: unknown): { sale: ProjectedSale; ledge
   return { sale, ledger }
 }
 
-function map(kind: string, p: Record<string, unknown>): Omit<ProjectionCommand, "stamp" | "eventId"> {
+type Body<T> = T extends unknown ? Omit<T, "stamp" | "eventId"> : never
+
+function map(kind: string, p: Record<string, unknown>): Body<ProjectionCommand> {
   switch (kind) {
     case "product_upserted":
       return { kind: "product", ...mapProduct(p.product) }
