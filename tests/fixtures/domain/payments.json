@@ -1,0 +1,61 @@
+{
+  "fn": "settlePayments",
+  "note": "নগদ + মোবাইল। কম দিলে বাকি (কাস্টমার লাগে); বেশি দিলে ফেরত নগদ থেকে",
+  "cases": [
+    {
+      "name": "ঠিক নগদ",
+      "input": { "total": 10000, "cash": 10000, "mobile": 0, "mobileMethod": "bkash", "hasCustomer": false },
+      "output": { "payments": [{ "method": "cash", "amount": 10000 }], "paid": 10000, "due": 0, "change": 0 }
+    },
+    {
+      "name": "বেশি নগদ, ফেরত",
+      "input": { "total": 10000, "cash": 12000, "mobile": 0, "mobileMethod": "bkash", "hasCustomer": false },
+      "output": { "payments": [{ "method": "cash", "amount": 12000 }], "paid": 10000, "due": 0, "change": 2000 }
+    },
+    {
+      "name": "কম দিলে কাস্টমার ছাড়া বাকি নয়",
+      "input": { "total": 10000, "cash": 5000, "mobile": 0, "mobileMethod": "bkash", "hasCustomer": false },
+      "error": { "code": "customer_required" }
+    },
+    {
+      "name": "কাস্টমারসহ বাকি",
+      "input": { "total": 10000, "cash": 5000, "mobile": 0, "mobileMethod": "bkash", "hasCustomer": true },
+      "output": { "payments": [{ "method": "cash", "amount": 5000 }], "paid": 5000, "due": 5000, "change": 0 }
+    },
+    {
+      "name": "পুরোটা বাকি",
+      "input": { "total": 10000, "cash": 0, "mobile": 0, "mobileMethod": "nagad", "hasCustomer": true },
+      "output": { "payments": [], "paid": 0, "due": 10000, "change": 0 }
+    },
+    {
+      "name": "পুরো মোবাইল",
+      "input": { "total": 10000, "cash": 0, "mobile": 10000, "mobileMethod": "nagad", "hasCustomer": false },
+      "output": { "payments": [{ "method": "nagad", "amount": 10000 }], "paid": 10000, "due": 0, "change": 0 }
+    },
+    {
+      "name": "মোবাইল মোটের বেশি",
+      "input": { "total": 10000, "cash": 0, "mobile": 12000, "mobileMethod": "bkash", "hasCustomer": false },
+      "error": { "code": "overpaid_digital" }
+    },
+    {
+      "name": "নগদ ও মোবাইল মিলিয়ে বেশি, ফেরত নগদ থেকে",
+      "input": { "total": 10000, "cash": 3000, "mobile": 8000, "mobileMethod": "rocket", "hasCustomer": false },
+      "output": {
+        "payments": [{ "method": "cash", "amount": 3000 }, { "method": "rocket", "amount": 8000 }],
+        "paid": 10000,
+        "due": 0,
+        "change": 1000
+      }
+    },
+    {
+      "name": "শূন্য মোট",
+      "input": { "total": 0, "cash": 0, "mobile": 0, "mobileMethod": "bkash", "hasCustomer": false },
+      "output": { "payments": [], "paid": 0, "due": 0, "change": 0 }
+    },
+    {
+      "name": "ঋণাত্মক নগদ",
+      "input": { "total": 100, "cash": -1, "mobile": 0, "mobileMethod": "bkash", "hasCustomer": true },
+      "error": { "code": "invalid_number" }
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "fn": "toBaseUnits",
+  "note": "স্টক সবসময় পিসে; কার্টন → packSize দিয়ে পিস",
+  "cases": [
+    { "name": "পিস যেমন আছে", "input": { "qty": 5, "unit": "piece", "packSize": 1 }, "output": 5 },
+    { "name": "কার্টন থেকে পিস", "input": { "qty": 2, "unit": "carton", "packSize": 10 }, "output": 20 },
+    { "name": "কার্টন সাইজ ১ হলে ত্রুটি", "input": { "qty": 2, "unit": "carton", "packSize": 1 }, "error": { "code": "no_carton" } },
+    { "name": "পরিমাণ শূন্য", "input": { "qty": 0, "unit": "piece", "packSize": 1 }, "error": { "code": "invalid_number" } },
+    { "name": "কার্টন সাইজ শূন্য", "input": { "qty": 1, "unit": "carton", "packSize": 0 }, "error": { "code": "invalid_number" } }
+  ]
+}

@@ -73,3 +73,7 @@ Node >= 20.12। লকফাইল নেই (`npm install` ব্যবহা�
 ## জানা সীমাবদ্ধতা
 - ডিপ্লয় করা লাইভ API-তে লোড বা আসল পাসওয়ার্ডে scrypt সময় আমাদের পরীক্ষা করা নেই।
 - ব্যাকআপ/restore/rollback পদ্ধতি `docs/RUNBOOK.md`-এ লেখা, কিন্তু restore-মহড়া এখনো হয়নি।
+
+## গোল্ডেন ফিক্সচার (ফ্রন্টএন্ডের সাথে আচরণ এক)
+- `tests/fixtures/domain/*.json` ফ্রন্টএন্ড (`pos_fontend/tests/fixtures/domain`) থেকে হুবহু কপি; `tests/unit/golden.test.ts` চালায় ও `fixtures.lock` (SHA-256) মেলায়।
+- `src/domain/{cart,fifo,expiry,units}.ts` ফ্রন্টএন্ডের `src/lib/domain`-এর সমতুল্য। সত্য-উৎস ফ্রন্টএন্ড: আগে সেখানে বদলান, তারপর JSON ও `fixtures.lock` এখানে কপি করে কোড মেলান।

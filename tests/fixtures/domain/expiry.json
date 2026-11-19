@@ -1,0 +1,14 @@
+{
+  "fn": "classifyExpiry",
+  "note": "আজ = 2026-11-12। expired ≤০ দিন, critical ≤৩০, soon ≤৯০, ok, none = মেয়াদ নেই",
+  "cases": [
+    { "name": "মেয়াদ নেই", "input": { "expiryDate": null, "today": "2026-11-12" }, "output": "none" },
+    { "name": "আজই মেয়াদ শেষ", "input": { "expiryDate": "2026-11-12", "today": "2026-11-12" }, "output": "expired" },
+    { "name": "গতকাল শেষ", "input": { "expiryDate": "2026-11-11", "today": "2026-11-12" }, "output": "expired" },
+    { "name": "আগামীকাল", "input": { "expiryDate": "2026-11-13", "today": "2026-11-12" }, "output": "critical" },
+    { "name": "ঠিক ৩০ দিন", "input": { "expiryDate": "2026-12-12", "today": "2026-11-12" }, "output": "critical" },
+    { "name": "৩১ দিন", "input": { "expiryDate": "2026-12-13", "today": "2026-11-12" }, "output": "soon" },
+    { "name": "ঠিক ৯০ দিন", "input": { "expiryDate": "2027-02-10", "today": "2026-11-12" }, "output": "soon" },
+    { "name": "৯১ দিন", "input": { "expiryDate": "2027-02-11", "today": "2026-11-12" }, "output": "ok" }
+  ]
+}
