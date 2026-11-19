@@ -1,0 +1,20 @@
+Fresh-clone test, 2026-11-20. Windows 11, Node v24.18.0, npm 11.16.0, git core.autocrlf=.
+Method: git clone --branch <branch> <local repo> into an EMPTY folder, then each step below exactly as listed, no manual intervention.
+Harness: fresh-clone.ps1 (not part of the repos). exit=0 means the step passed.
+
+## AFTER: pos_fontend @ chore/handover
+git clone (chore/handover)     exit=0    0s  20ae5ae fix: self-host Noto Sans Bengali so the build never fetches Google Fonts
+npm ci                         exit=0   26s  added 374 packages, and audited 381 packages in 26s
+npm run typecheck              exit=0    4s  
+npm run lint                   exit=0    6s  
+npm test                       exit=0    4s  Test Files  22 passed (22) | Tests  235 passed (235) | Duration  2.77s (transform 2.20s, setup 0ms, collect 6.66s, tests 1.68s, environment 7ms, prepare 6.41s)
+npm run build                  exit=0   28s  Generating static pages (6/26) | Generating static pages (12/26) | Generating static pages (19/26) | ✓ Generating static pages (26/26)
+
+## AFTER: pos_backend @ chore/handover
+git clone (chore/handover)     exit=0    0s  c4d7aa3 chore: .gitattributes so golden-fixture hashes survive a Windows checkout
+npm ci                         exit=0    3s  added 60 packages, and audited 61 packages in 3s
+npm run typecheck              exit=0    3s  
+npm test                       exit=0    8s  health: ডেটাবেস পরীক্ষা ব্যর্থ Error: password authentication failed for user pos_app | Test Files  9 passed (9) | Tests  131 passed (131) | Duration  6.69s (transform 89 ...
+npm run build:edge             exit=0    1s  supabase\functions\api\app.bundle.js  84.4kb | Built supabase/functions/api/app.bundle.js
+
+Note: the backend test log contains 'password authentication failed for user pos_app'. That is an intentional test fixture (tests/unit/api.test.ts:59) that simulates a database failure; it is not a real error.

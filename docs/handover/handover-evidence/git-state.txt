@@ -1,0 +1,24 @@
+Git state, 2026-11-20 (refreshed after the push). The chore/handover branches ARE pushed to GitHub; NOTHING is merged into main; no PR opened; CI has not run on them.
+
+### pos_backend (origin: https://github.com/showmik121/pos_backend.git)
+branch: chore/handover  upstream: origin/chore/handover
+local HEAD 7b15588 == remote chore/handover 7b15588 : MATCH;  remote main 015029a (unchanged)
+commits on chore/handover not in main:
+  7b15588 docs: complete RUNBOOK and ONBOARDING for client handover
+  c4d7aa3 chore: .gitattributes so golden-fixture hashes survive a Windows checkout
+  c8d8397 fix: sync push — staff allow-list instead of a two-kind deny-list
+  c403cc7 chore: untrack node_modules symlink, commit lockfile, use npm ci in CI
+open a PR: https://github.com/showmik121/pos_backend/pull/new/chore/handover
+
+### pos_fontend (origin: https://github.com/showmik121/pos_fontend.git)
+branch: chore/handover  upstream: origin/chore/handover
+local HEAD a72f3da == remote chore/handover a72f3da : MATCH;  remote main 1b1965b (unchanged)
+commits on chore/handover not in main:
+  a72f3da docs: complete RUNBOOK and ONBOARDING for client handover
+  20ae5ae fix: self-host Noto Sans Bengali so the build never fetches Google Fonts
+  302f7c3 chore: .gitattributes so golden-fixture hashes survive a Windows checkout
+  6d16627 test: e2e for offline sync, backup/wipe/restore, staff limits, expired batches + 375px crawler
+  f009ccb fix: a malformed pulled sync event can no longer stop sync for the whole store
+  faa50ce chore: commit lockfile and use npm ci in CI
+open a PR: https://github.com/showmik121/pos_fontend/pull/new/chore/handover
+

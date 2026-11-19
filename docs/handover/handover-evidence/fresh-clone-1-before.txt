@@ -1,0 +1,22 @@
+Fresh-clone test, 2026-11-20. Windows 11, Node v24.18.0, npm 11.16.0, git core.autocrlf=.
+Method: git clone --branch <branch> <local repo> into an EMPTY folder, then each step below exactly as listed, no manual intervention.
+Harness: fresh-clone.ps1 (not part of the repos). exit=0 means the step passed.
+
+## BEFORE: pos_fontend @ test/e2e-critical-flows
+git clone (test/e2e-critical-flows) exit=0    1s  6d16627 test: e2e for offline sync, backup/wipe/restore, staff limits, expired batches + 375px crawler
+npm ci                         exit=0   17s  added 373 packages, and audited 380 packages in 16s
+npm run typecheck              exit=0    3s  
+npm run lint                   exit=0    5s  
+npm test                       exit=1    4s  AssertionError: expected 'da9894ef9f1120e19d105cdf4ef89ffab8f0b…' to be '61939ea25a6f0994eeade69fa778e95efa895…' // Object.is equality | Test Files  1 failed | 21 passed  ...
+npm run build                  exit=0   23s  Generating static pages (6/26) | Generating static pages (12/26) | Generating static pages (19/26) | ✓ Generating static pages (26/26)
+
+## BEFORE: pos_backend @ fix/security-hardening
+git clone (fix/security-hardening) exit=0    0s  c8d8397 fix: sync push — staff allow-list instead of a two-kind deny-list
+npm ci                         exit=0    2s  added 60 packages, and audited 61 packages in 2s
+npm run typecheck              exit=0    2s  
+npm test                       exit=1    6s  AssertionError: expected 'da9894ef9f1120e19d105cdf4ef89ffab8f0b…' to be '61939ea25a6f0994eeade69fa778e95efa895…' // Object.is equality | Test Files  1 failed | 8 passed ( ...
+npm run build:edge             exit=0    0s  supabase\functions\api\app.bundle.js  84.4kb | Built supabase/functions/api/app.bundle.js
+
+Finding: npm test fails (1 test, golden-fixture hash) in BOTH repos on a Windows clone: core.autocrlf=true rewrote the fixtures to CRLF.
+
+Finding: in a separate AFTER run the first frontend build failed with a next/font Google Fonts fetch error and passed on an immediate retry (non-hermetic build).

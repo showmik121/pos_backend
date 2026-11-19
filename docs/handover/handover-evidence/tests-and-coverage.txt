@@ -1,0 +1,13 @@
+Test and coverage numbers, 2026-11-20.
+Tool: vitest 3.2.7 + @vitest/coverage-v8 (installed with --no-save; not in package.json). Unit tests only; Playwright E2E is not counted.
+
+| scope | statements | branches | functions | lines |
+|---|---|---|---|---|
+| fe-lib | 76.56% | 88.67% | 81.21% | 76.56% |
+| fe-all | 24.59% | 83.23% | 62.01% | 24.59% |
+| be-src | 53.63% | 84.41% | 90.9% | 53.63% |
+| be-all | 62.16% | 85.92% | 90.9% | 62.16% |
+
+fe-lib = pos_fontend src/lib (logic, 45 files); fe-all = pos_fontend src (107 files incl. React components); be-src = pos_backend src (23 files); be-all = pos_backend src + server (29 files). Backend excludes Postgres integration tests (need a database).
+
+Counts: pos_fontend 235/235 unit tests (fresh clone), 12 passed + 1 skipped Playwright (skipped = needs E2E_REAL=1 real backend; 2 of the 12 are expected-failure tests documenting known bugs). pos_backend 131/131 unit tests.

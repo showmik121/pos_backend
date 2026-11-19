@@ -1,7 +1,7 @@
 # অনবোর্ডিং গাইড: POS (ব্যাকএন্ড)
 
 ## ১. এক নজরে
-ফার্মেসি ও কসমেটিক্স দোকানের POS-এর API। TypeScript, **একই কোড** Node (লোকাল) ও Supabase Edge Function (Deno, লাইভ) দুই জায়গায় চলে। ডাটাবেস Supabase PostgreSQL। ফ্রন্টএন্ড: `showmik121/pos_fontend`। রানবুক: `docs/RUNBOOK.md`; সীমাবদ্ধতা: `POS_SYSTEM/docs/KNOWN_LIMITATIONS.md`।
+ফার্মেসি ও কসমেটিক্স দোকানের POS-এর API। TypeScript, **একই কোড** Node (লোকাল) ও Supabase Edge Function (Deno, লাইভ) দুই জায়গায় চলে। ডাটাবেস Supabase PostgreSQL। ফ্রন্টএন্ড: `showmik121/pos_fontend`। রানবুক: `docs/RUNBOOK.md`; সীমাবদ্ধতা: `docs/handover/KNOWN_LIMITATIONS.md`।
 
 ## ২. আর্কিটেকচার
 
@@ -76,12 +76,12 @@ npm run build:edge       # Edge বান্ডল
 cp .env.example .env     # মান বসান (গোপন, কমিট নয়)
 npm run dev              # http://localhost:3001/api/health
 ```
-- ✅ পরিষ্কার ক্লোনে এই ধাপগুলো এক চেষ্টায় পাস (২০২৬-১১-২০; প্রমাণ `POS_SYSTEM/docs/handover-evidence/`)। `npm test` চালানোর সময় `password authentication failed for user pos_app` লাইনটি দেখাবে: এটি ইচ্ছাকৃত টেস্ট (`tests/unit/api.test.ts`), ডাটাবেস-ডাউন নকল করে।
+- ✅ পরিষ্কার ক্লোনে এই ধাপগুলো এক চেষ্টায় পাস (২০২৬-১১-২০; প্রমাণ `docs/handover/handover-evidence/`)। `npm test` চালানোর সময় `password authentication failed for user pos_app` লাইনটি দেখাবে: এটি ইচ্ছাকৃত টেস্ট (`tests/unit/api.test.ts`), ডাটাবেস-ডাউন নকল করে।
 - ইন্টিগ্রেশন টেস্ট (`npm run test:integration`) আসল Postgres 16 ও `pos_app` লাগে (`INTEGRATION_DATABASE_URL`); CI-র `postgres` জবে চলে। ⚠ Supabase-এর নিজস্ব পরিবেশে চালানো হয়নি।
 - Supabase সেটআপ ও ডিপ্লয়ের ধাপ `README.md`-তে।
 
 ## ৯. জানা সীমাবদ্ধতা ও পরের কাজ
-সম্পূর্ণ তালিকা: `POS_SYSTEM/docs/KNOWN_LIMITATIONS.md`। এখানে শুধু ডেভেলপারের জন্য শীর্ষ কয়টি:
+সম্পূর্ণ তালিকা: `docs/handover/KNOWN_LIMITATIONS.md`। এখানে শুধু ডেভেলপারের জন্য শীর্ষ কয়টি:
 - সিংক-প্রজেক্টর (লগ → রিলেশনাল টেবিল, রিপোর্ট, নেগেটিভ-স্টক সতর্কতা) বাকি; মাইগ্রেশন ০০৭-০০৯ অন্য শাখায় আছে কিন্তু মার্জ/পর্যালোচনা হয়নি।
 - restore-মহড়া একবারও হয়নি; লাইভে কোন মাইগ্রেশন প্রয়োগ হয়েছে যাচাই হয়নি; লাইভ `/health` পুরনো আকারে উত্তর দিচ্ছে।
 - কর্মচারীর কাছে ক্রয়মূল্য ফাঁস (সিংক-pull), ফোন-নম্বর দখল/গণনা, লগইন-লক ইচ্ছাকৃতভাবে ঘটানো যায়, `sync_events`-এর কোটা/মেয়াদ নেই (সব `KNOWN_LIMITATIONS.md`-তে ফাইল:লাইনসহ)।

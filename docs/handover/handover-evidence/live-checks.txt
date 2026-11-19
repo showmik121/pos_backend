@@ -1,0 +1,17 @@
+Read-only checks of the deployed URLs, 2026-11-20. No credentials used.
+
+### GET https://gaxzkbcomeexlnzquvzf.supabase.co/functions/v1/api/health
+{"status":"ok"}
+HTTP 200 in 0.563242s
+
+Expected by current code/RUNBOOK: {"status":"ok","db":"ok"}. Got a body WITHOUT the db field => the deployed function is older than main (or the deploy pipeline is not running).
+
+### HEAD https://bipone.netlify.app/ (selected headers)
+HTTP/1.1 200 OK
+Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://*.supabase.co; worker-src 'self'; manifest-src 'self'; frame-ancesto ...
+Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=()
+Referrer-Policy: strict-origin-when-cross-origin
+Server: Netlify
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
