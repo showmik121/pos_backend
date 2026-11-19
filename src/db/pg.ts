@@ -1,6 +1,7 @@
 import postgres from "postgres"
 import { DomainError } from "../domain/errors.js"
 import { createPgCatalog } from "./pg-catalog.js"
+import { createPgStock } from "./pg-stock.js"
 import type { NewSyncEvent, PublicUser, Repo, Store, SyncEvent, UserWithHash } from "./types.js"
 
 // PostgreSQL (Supabase) রিপোজিটরি।
@@ -39,6 +40,7 @@ export function createPgRepo(opts: { connectionString: string; max?: number }): 
 
   return {
     ...createPgCatalog(withStore),
+    ...createPgStock(withStore),
 
     async registerStore({ storeName, storeKind, ownerName, phone, passwordHash }) {
       try {

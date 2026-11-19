@@ -300,4 +300,67 @@ describe.skipIf(!URL_)("PostgreSQL: আসল ডাটাবেসে", () => {
     const add = await call("POST", `/v1/products/${target}/barcodes`, { token: s.owner, body: { code: `C-${target}`, packSize: 10 } })
     expect(add.status).toBe(200)
   })
+
+  const rcpt = (over: Record<string, unknown> = {}) => ({
+    id: crypto.randomUUID(), qty: 10, unit: "piece", batchNo: "B1", expiryDate: "2030-06-30", costPoisha: 300, ...over,
+  })
+
+  it("স্টক API: জমা, একই ব্যাচে মেশা, ইডেমপোটেন্ট রসিদ, সমান্তরাল জমায় কিছু হারায় না", async () => {
+    const s = await shop()
+    const p = product()
+    expect((await call("POST", "/v1/products", { token: s.owner, body: p })).status).toBe(201)
+    const url = `/v1/products/${p.id}/stock-ins`
+    const first = rcpt({ qty: 12, costPoisha: 320, pricePoisha: 550 })
+    const a = await call("POST", url, { token: s.owner, body: first })
+    expect(a.status).toBe(201)
+    expect(a.json.batch).toMatchObject({ qtyRemaining: 12, costPoisha: 320, batchNo: "B1", expiryDate: "2030-06-30" })
+    expect((await call("POST", url, { token: s.owner, body: first })).status).toBe(200)
+    expect((await call("POST", url, { token: s.owner, body: { ...first, qty: 13 } })).json.error.code).toBe("id_conflict")
+    const mixed = await Promise.all(Array.from({ length: 6 }, () => call("POST", url, { token: s.owner, body: rcpt({ qty: 5 }) })))
+    expect(mixed.every((r) => r.status === 201)).toBe(true)
+    expect(new Set(mixed.map((r) => r.json.batch.id)).size).toBe(1)
+    const got = (await call("GET", `/v1/products/${p.id}`, { token: s.owner })).json.product
+    expect(got).toMatchObject({ stockQty: 12 + 30, costPoisha: 300, pricePoisha: 550 })
+    expect((await call("GET", `/v1/batches?productId=${p.id}`, { token: s.staff })).json.items[0].costPoisha).toBeNull()
+  })
+
+  it("স্টক API: ব্যাচ পেজিনেশন, status ফিল্টার, সরানো (শুধু মালিক), ক্ষতির খাতা, অন্য দোকানে অদৃশ্য", async () => {
+    const s = await shop()
+    const other = await shop()
+    const p = product()
+    await call("POST", "/v1/products", { token: s.owner, body: p })
+    const url = `/v1/products/${p.id}/stock-ins`
+    const ids: string[] = []
+    for (const [no, exp] of [["A", "2030-01-31"], ["B", "2031-01-31"], ["C", "2032-01-31"], ["OLD", "2020-01-31"]] as const) {
+      const r = await call("POST", url, { token: s.owner, body: rcpt({ batchNo: no, expiryDate: exp, qty: 4 }) })
+      ids.push(r.json.batch.id)
+    }
+    const seen: string[] = []
+    let cursor: string | null = null
+    for (let page = 0; page < 6; page++) {
+      const r = await call("GET", `/v1/batches?productId=${p.id}&limit=2${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`, { token: s.owner })
+      expect(r.status).toBe(200)
+      seen.push(...r.json.items.map((b: { batchNo: string }) => b.batchNo))
+      cursor = r.json.nextCursor
+      if (!cursor) break
+    }
+    expect(seen).toEqual(["OLD", "A", "B", "C"])
+    const names = async (q: string) => (await call("GET", `/v1/batches?productId=${p.id}&${q}`, { token: s.owner })).json.items.map((b: { batchNo: string }) => b.batchNo)
+    expect(await names("status=expired")).toEqual(["OLD"])
+    expect(await names("status=active")).toEqual(["A", "B", "C"])
+    expect((await call("GET", `/v1/batches?productId=${p.id}`, { token: other.owner })).json.items).toEqual([])
+    const target = ids[1]!
+    const body = { id: crypto.randomUUID(), reason: "নষ্ট" }
+    expect((await call("POST", `/v1/batches/${target}/removals`, { token: s.staff, body })).status).toBe(403)
+    expect((await call("POST", `/v1/batches/${target}/removals`, { token: other.owner, body })).status).toBe(404)
+    expect((await call("POST", `/v1/batches/${target}/removals`, { token: s.owner, body })).status).toBe(201)
+    expect((await call("POST", `/v1/batches/${target}/removals`, { token: s.owner, body })).status).toBe(200)
+    expect(await names("status=active")).toEqual(["A", "C"])
+    expect((await call("GET", `/v1/products/${p.id}`, { token: s.owner })).json.product.stockQty).toBe(12)
+    const log = await call("GET", "/v1/batch-removals", { token: s.owner })
+    expect(log.json.items).toHaveLength(1)
+    expect(log.json.items[0]).toMatchObject({ batchNo: "B", qty: 4, costPoisha: 300, reason: "নষ্ট", by: "মালিক" })
+    expect(log.json.totalLossPoisha).toBe(1200)
+    expect((await call("GET", "/v1/batch-removals", { token: other.owner })).json.items).toEqual([])
+  })
 })
