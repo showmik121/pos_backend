@@ -2,7 +2,7 @@ import { DomainError } from "../src/domain/errors.js"
 import { normalizePhone } from "../src/domain/phone.js"
 import { hashPassword, verifyPassword, dummyHash } from "../src/auth/password.js"
 import { signToken, verifyToken, assertSecret } from "../src/auth/token.js"
-import type { NewSyncEvent, PublicUser, Repo, StoreKind } from "../src/db/types.js"
+import type { ClientErrorReport, NewSyncEvent, PublicUser, Repo, StoreKind } from "../src/db/types.js"
 
 // Web-standard (Request → Response) অ্যাপ: একই কোড Node (লোকাল) ও Supabase Edge Function (Deno) এ চলে।
 // সব রুট /api প্রিফিক্সের নিচে: https://<ref>.supabase.co/functions/v1/api/v1/...
@@ -52,6 +52,22 @@ function parseEvents(raw: unknown): NewSyncEvent[] {
     if (JSON.stringify(e.payload).length > SYNC_MAX_PAYLOAD) throw new DomainError("invalid_input", `${where}: payload খুব বড়`)
     return { id: e.id, kind: e.kind, at: e.at, payload: e.payload as Record<string, unknown> }
   })
+}
+
+const CLIENT_ERROR_MAX_BODY = 16 * 1024
+const CLIENT_ERROR_IP: Limit = { max: 10, window: 60 * 60 } // এক IP থেকে ঘণ্টায় ১০
+const CLIENT_ERROR_ALL: Limit = { max: 100, window: 60 * 60 } // সব মিলিয়ে ঘণ্টায় ১০০ (টেবিল ফাঁপা হওয়া ঠেকায়)
+const CLIENT_ERROR_KINDS = ["render", "window", "rejection"] as const
+
+/** ক্র্যাশ রিপোর্ট ছেঁটে নেয়: লম্বা হলে কাটে, অচেনা ধরন বাদ; query/hash বাদ দিয়ে শুধু পথ রাখে (টোকেন/আইডি ফাঁস ঠেকায়) */
+function parseClientError(b: Record<string, unknown>, storeId: string | null, userAgent: string | null): ClientErrorReport {
+  const text = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.slice(0, max) : null)
+  const message = text(b.message, 500)
+  if (!message) throw new DomainError("invalid_input", "message দিন")
+  const kind = CLIENT_ERROR_KINDS.find((k) => k === b.kind)
+  if (!kind) throw new DomainError("invalid_input", "kind সঠিক নয়")
+  const path = typeof b.path === "string" ? (b.path.split(/[?#]/)[0] ?? "").slice(0, 200) || null : null
+  return { storeId, kind, message, stack: text(b.stack, 4000), path, appVersion: text(b.appVersion, 40), userAgent: userAgent?.slice(0, 200) || null }
 }
 
 const STORE_KINDS: StoreKind[] = ["pharmacy", "cosmetics", "other"]
@@ -246,6 +262,18 @@ export function createApp(opts: AppOptions): App {
       if (!/^\d{1,15}$/.test(afterText) || !/^\d{1,4}$/.test(limitText)) throw new DomainError("invalid_input", "after/limit সংখ্যা হতে হবে")
       const limit = Math.min(Math.max(Number(limitText), 1), SYNC_PULL_MAX)
       return { status: 200, body: await repo.pullEvents(user.storeId, Number(afterText), limit) }
+    }
+
+    // ফ্রন্টএন্ড ক্র্যাশ রিপোর্ট: লগইন ছাড়াও আসতে পারে (অ্যাপ ভাঙলে সেশন নাও থাকতে পারে), তাই কড়া হার-সীমা ও ছোট বডি
+    if (key === "POST /v1/client-errors") {
+      const ip = clientIp(req)
+      const checks: Array<[string, Limit]> = [...(ip ? ([[`cerr:i:${ip}`, CLIENT_ERROR_IP]] as Array<[string, Limit]>) : []), ["cerr:all", CLIENT_ERROR_ALL]]
+      if (!(await withinLimits(checks))) throw tooMany()
+      const b = await readJson(req, CLIENT_ERROR_MAX_BODY)
+      // টোকেন থাকলে দোকান জানি, না থাকলে বা অচল হলেও রিপোর্ট নিই
+      const storeId = await authenticate(req).then((u) => u.storeId, () => null)
+      await repo.recordClientError(parseClientError(b, storeId, req.headers.get("user-agent")))
+      return { status: 200, body: { ok: true } }
     }
 
     // A2: স্টাফ ব্যবস্থাপনা (শুধু মালিক)

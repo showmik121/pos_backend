@@ -101,6 +101,10 @@ export function createPgRepo(opts: { connectionString: string; max?: number }): 
       return rows[0]?.ok === true
     },
 
+    async recordClientError(r) {
+      await sql`SELECT record_client_error(${r.storeId}, ${r.kind}, ${r.message}, ${r.stack}, ${r.path}, ${r.appVersion}, ${r.userAgent})`
+    },
+
     async ping() {
       await sql`SELECT 1`
     },

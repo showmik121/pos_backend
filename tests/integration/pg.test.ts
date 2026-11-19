@@ -149,6 +149,14 @@ describe.skipIf(!URL_)("PostgreSQL: আসল ডাটাবেসে", () => {
     expect(codes[5]).toBe(429)
   })
 
+  it("ক্র্যাশ রিপোর্ট: ফাংশন দিয়ে লেখা যায় (একই ত্রুটি দুবার ঠিকঠাক), কিন্তু টেবিল সরাসরি পড়া/লেখা যায় না", async () => {
+    const body = { kind: "window", message: `ইন্টিগ্রেশন-${Date.now()}`, stack: "Error\n at x", path: "/a/?t=1", appVersion: "t" }
+    expect((await call("POST", "/v1/client-errors", { body })).status).toBe(200)
+    expect((await call("POST", "/v1/client-errors", { body })).status).toBe(200)
+    await expect(raw`SELECT * FROM client_errors`).rejects.toThrow(/permission denied/)
+    await expect(raw`DELETE FROM client_errors`).rejects.toThrow(/permission denied/)
+  })
+
   it("অনুমতি: pos_app password_hash পড়তে, ইভেন্ট বদলাতে/মুছতে, schema_migrations ছুঁতে পারে না", async () => {
     await expect(raw`SELECT password_hash FROM users LIMIT 1`).rejects.toThrow(/permission denied/)
     await expect(raw`UPDATE sync_events SET kind = 'zz_zz'`).rejects.toThrow(/permission denied/)

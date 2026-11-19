@@ -31,7 +31,7 @@ Node >= 20.12। লকফাইল নেই (`npm install` ব্যবহা�
 | `tests/integration/` | আসল Postgres-এ মাইগ্রেশন-পরবর্তী RLS, সিংক, থ্রটল, অনুমতি |
 
 ## API (প্রিফিক্স `/api`)
-`GET /health`, `POST /v1/auth/register-store`, `POST /v1/auth/login`, `GET /v1/me`, `GET|POST /v1/staff`, `PATCH /v1/staff/:id`, সিংক: `POST /v1/sync/register-device`, `POST /v1/sync/push`, `GET /v1/sync/pull?after=&limit=`।
+`GET /health`, `POST /v1/auth/register-store`, `POST /v1/auth/login`, `GET /v1/me`, `GET|POST /v1/staff`, `PATCH /v1/staff/:id`, সিংক: `POST /v1/sync/register-device`, `POST /v1/sync/push`, `GET /v1/sync/pull?after=&limit=`; ক্র্যাশ রিপোর্ট: `POST /v1/client-errors` (লগইন ছাড়াও; IP প্রতি ঘণ্টায় ১০, মোট ১০০; বডি ≤১৬ KB; `record_client_error` ফাংশন দিয়ে `client_errors` টেবিলে, একই ত্রুটিতে গোনা বাড়ে, ৩০ দিন পর সাফ)।
 
 ### সিংক (ইভেন্ট-লগ)
 ক্লায়েন্ট প্রতিটি কাজকে অপরিবর্তনীয় ইভেন্ট (`id` uuid ক্লায়েন্ট-জেনারেটেড, `kind`, `at`, `payload`) হিসেবে push করে; একই `id` দুবার এলে একবারই থাকে। সার্ভার `seq` দেয়, pull সেই কার্সরে। ডিভাইস নিবন্ধনে দোকান-ভিত্তিক কোড (A, B…) মেলে, যা বিল নম্বরের উপসর্গ ("A-1001")। কনফ্লিক্টে "শেষ বদল জেতে" ক্লায়েন্ট রিপ্লে করার সময় `at` দেখে ঠিক করে; সার্ভার শুধু লগ রাখে। `sale_voided`/`settings_updated` শুধু মালিক পাঠাতে পারে। `sync_events`-এ UPDATE/DELETE-এর অনুমতি নেই। `001`-এর রিলেশনাল টেবিল (products, sales…) এখনো ব্যবহার হয় না; রিপোর্টের জন্য পরে লগ থেকে প্রজেক্ট করা হবে।

@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto"
 import { DomainError } from "../domain/errors.js"
-import type { NewSyncEvent, PublicUser, Repo, Store, SyncEvent, UserWithHash } from "./types.js"
+import type { ClientErrorReport, NewSyncEvent, PublicUser, Repo, Store, SyncEvent, UserWithHash } from "./types.js"
 
 // টেস্ট ও লোকাল ডেমোর জন্য ইন-মেমরি রিপোজিটরি। pg.ts এর সঙ্গে একই ইন্টারফেস।
-export function createMemoryRepo(opts: { now?: () => number } = {}): Repo {
+export function createMemoryRepo(opts: { now?: () => number } = {}): Repo & { peekClientErrors(): Array<ClientErrorReport & { count: number }> } {
   const now = opts.now ?? (() => Date.now())
   const attempts = new Map<string, number[]>()
+  const clientErrors = new Map<string, ClientErrorReport & { count: number }>()
   const stores = new Map<string, Store>()
   const users = new Map<string, UserWithHash>()
   const devices = new Map<string, string[]>() // storeId -> [deviceId...] (সূচক = কোডের ক্রম)
@@ -107,6 +108,16 @@ export function createMemoryRepo(opts: { now?: () => number } = {}): Repo {
     async throttleReset(bucket) {
       attempts.delete(bucket)
     },
+
+    async recordClientError(r) {
+      const key = `${r.kind}|${r.message}|${(r.stack ?? "").slice(0, 300)}`
+      const hit = clientErrors.get(key)
+      if (hit) hit.count += 1
+      else clientErrors.set(key, { ...r, count: 1 })
+    },
+
+    /** শুধু টেস্টের জন্য */
+    peekClientErrors: () => [...clientErrors.values()],
 
     async ping() {},
 
