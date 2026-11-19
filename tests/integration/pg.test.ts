@@ -163,4 +163,60 @@ describe.skipIf(!URL_)("PostgreSQL: আসল ডাটাবেসে", () => {
     await expect(raw`DELETE FROM sync_events`).rejects.toThrow(/permission denied/)
     await expect(raw`SELECT * FROM schema_migrations`).rejects.toThrow(/permission denied/)
   })
+
+  // ---- ০০৬: পণ্য ও ব্যাচের স্কিমা (REST API-র আগের স্তর)
+  async function asStore<T>(storeId: string, fn: (tx: typeof raw) => Promise<T>): Promise<T> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (await raw.begin(async (tx: any) => {
+      await tx`SELECT set_config('app.store_id', ${storeId}, true)`
+      return fn(tx)
+    })) as T
+  }
+
+  it("০০৬: একই product id দুই দোকানে চলে, একে অপরের ডেটা দেখে না; বারকোড দোকান-ভিত্তিক ইউনিক", async () => {
+    const a = await shop()
+    const b = await shop()
+    const pid = crypto.randomUUID()
+    const code = `890${Date.now()}`
+    await asStore(a.storeId, async (tx) => {
+      await tx`INSERT INTO products (id, store_id, name, sell_price_poisha) VALUES (${pid}, ${a.storeId}, 'এ-পণ্য', 500)`
+      await tx`INSERT INTO product_barcodes (store_id, code, product_id, pack_size) VALUES (${a.storeId}, ${code}, ${pid}, 1)`
+    })
+    await asStore(b.storeId, async (tx) => {
+      expect(await tx`SELECT 1 FROM products WHERE id = ${pid}`).toHaveLength(0)
+      await tx`INSERT INTO products (id, store_id, name, sell_price_poisha) VALUES (${pid}, ${b.storeId}, 'বি-পণ্য', 700)`
+      await tx`INSERT INTO product_barcodes (store_id, code, product_id, pack_size) VALUES (${b.storeId}, ${code}, ${pid}, 1)`
+    })
+    await expect(
+      asStore(b.storeId, (tx) => tx`INSERT INTO product_barcodes (store_id, code, product_id, pack_size) VALUES (${b.storeId}, ${code}, ${pid}, 10)`),
+    ).rejects.toThrow(/duplicate key/)
+  })
+
+  it("০০৬: ব্যাচ — একই পণ্য+নম্বর+মেয়াদ মেশে (ইউনিক), ঋণাত্মক স্টক চলে, নিষিদ্ধ কলাম বদলানো যায় না, অন্য দোকানের পণ্যে ব্যাচ হয় না", async () => {
+    const a = await shop()
+    const b = await shop()
+    const pid = crypto.randomUUID()
+    const bid = crypto.randomUUID()
+    await asStore(a.storeId, async (tx) => {
+      await tx`INSERT INTO products (id, store_id, name, sell_price_poisha) VALUES (${pid}, ${a.storeId}, 'পণ্য', 500)`
+      await tx`INSERT INTO stock_batches (id, store_id, product_id, batch_no, expiry_date, qty_remaining) VALUES (${bid}, ${a.storeId}, ${pid}, 'B1', '2027-01-31', 10)`
+    })
+    await expect(
+      asStore(a.storeId, (tx) => tx`INSERT INTO stock_batches (id, store_id, product_id, batch_no, expiry_date, qty_remaining) VALUES (${crypto.randomUUID()}, ${a.storeId}, ${pid}, 'B1', '2027-01-31', 5)`),
+    ).rejects.toThrow(/stock_batches_merge_uq/)
+    await asStore(a.storeId, async (tx) => {
+      await tx`UPDATE stock_batches SET qty_remaining = -3 WHERE id = ${bid}`
+      const [row] = await tx`SELECT qty_remaining FROM stock_batches WHERE id = ${bid}`
+      expect(row?.qty_remaining).toBe(-3)
+    })
+    await expect(
+      asStore(a.storeId, (tx) => tx`UPDATE stock_batches SET expiry_date = '2030-01-01' WHERE id = ${bid}`),
+    ).rejects.toThrow(/permission denied/)
+    await asStore(b.storeId, async (tx) => {
+      expect(await tx`SELECT 1 FROM stock_batches WHERE id = ${bid}`).toHaveLength(0)
+    })
+    await expect(
+      asStore(b.storeId, (tx) => tx`INSERT INTO stock_batches (id, store_id, product_id, qty_remaining) VALUES (${crypto.randomUUID()}, ${b.storeId}, ${pid}, 1)`),
+    ).rejects.toThrow(/foreign key/)
+  })
 })
