@@ -1,0 +1,87 @@
+{
+  "fn": "allocateFifo",
+  "note": "আগে মেয়াদ শেষ হওয়া ব্যাচ আগে; মেয়াদহীন সবার শেষে; মেয়াদোত্তীর্ণ (আজ বা আগে) বাদ; একই মেয়াদে আগে আসা আগে। আজ = 2026-11-12",
+  "cases": [
+    {
+      "name": "আগে মেয়াদ শেষ হওয়াটা আগে",
+      "input": {
+        "batches": [
+          { "id": "A", "expiryDate": "2027-01-01", "qtyRemaining": 5, "receivedAt": "2026-01-02T00:00:00.000Z" },
+          { "id": "B", "expiryDate": "2026-12-01", "qtyRemaining": 5, "receivedAt": "2026-01-03T00:00:00.000Z" },
+          { "id": "C", "expiryDate": null, "qtyRemaining": 5, "receivedAt": "2026-01-01T00:00:00.000Z" },
+          { "id": "D", "expiryDate": "2026-11-12", "qtyRemaining": 5, "receivedAt": "2025-12-01T00:00:00.000Z" }
+        ],
+        "qtyNeeded": 7,
+        "today": "2026-11-12"
+      },
+      "output": [{ "batchId": "B", "qty": 5 }, { "batchId": "A", "qty": 2 }]
+    },
+    {
+      "name": "মেয়াদহীন শেষে, মেয়াদোত্তীর্ণ বাদ",
+      "input": {
+        "batches": [
+          { "id": "A", "expiryDate": "2027-01-01", "qtyRemaining": 5, "receivedAt": "2026-01-02T00:00:00.000Z" },
+          { "id": "B", "expiryDate": "2026-12-01", "qtyRemaining": 5, "receivedAt": "2026-01-03T00:00:00.000Z" },
+          { "id": "C", "expiryDate": null, "qtyRemaining": 5, "receivedAt": "2026-01-01T00:00:00.000Z" },
+          { "id": "D", "expiryDate": "2026-11-12", "qtyRemaining": 5, "receivedAt": "2025-12-01T00:00:00.000Z" }
+        ],
+        "qtyNeeded": 12,
+        "today": "2026-11-12"
+      },
+      "output": [{ "batchId": "B", "qty": 5 }, { "batchId": "A", "qty": 5 }, { "batchId": "C", "qty": 2 }]
+    },
+    {
+      "name": "স্টক কম",
+      "input": {
+        "batches": [
+          { "id": "A", "expiryDate": "2027-01-01", "qtyRemaining": 5, "receivedAt": "2026-01-02T00:00:00.000Z" },
+          { "id": "D", "expiryDate": "2026-11-12", "qtyRemaining": 5, "receivedAt": "2025-12-01T00:00:00.000Z" }
+        ],
+        "qtyNeeded": 6,
+        "today": "2026-11-12"
+      },
+      "error": { "code": "insufficient_stock", "details": { "available": 5, "requested": 6 } }
+    },
+    {
+      "name": "একই মেয়াদে আগে আসা আগে",
+      "input": {
+        "batches": [
+          { "id": "E", "expiryDate": "2027-03-01", "qtyRemaining": 4, "receivedAt": "2026-01-02T00:00:00.000Z" },
+          { "id": "F", "expiryDate": "2027-03-01", "qtyRemaining": 4, "receivedAt": "2026-01-01T00:00:00.000Z" }
+        ],
+        "qtyNeeded": 5,
+        "today": "2026-11-12"
+      },
+      "output": [{ "batchId": "F", "qty": 4 }, { "batchId": "E", "qty": 1 }]
+    },
+    {
+      "name": "শূন্য স্টকের ব্যাচ এড়ায়",
+      "input": {
+        "batches": [
+          { "id": "G", "expiryDate": "2026-12-01", "qtyRemaining": 0, "receivedAt": "2026-01-01T00:00:00.000Z" },
+          { "id": "H", "expiryDate": "2027-06-01", "qtyRemaining": 3, "receivedAt": "2026-01-02T00:00:00.000Z" }
+        ],
+        "qtyNeeded": 3,
+        "today": "2026-11-12"
+      },
+      "output": [{ "batchId": "H", "qty": 3 }]
+    },
+    {
+      "name": "ঋণাত্মক স্টকের ব্যাচ বিক্রির যোগ্য নয়",
+      "input": {
+        "batches": [
+          { "id": "I", "expiryDate": "2026-12-01", "qtyRemaining": -2, "receivedAt": "2026-01-01T00:00:00.000Z" },
+          { "id": "J", "expiryDate": "2027-06-01", "qtyRemaining": 3, "receivedAt": "2026-01-02T00:00:00.000Z" }
+        ],
+        "qtyNeeded": 3,
+        "today": "2026-11-12"
+      },
+      "output": [{ "batchId": "J", "qty": 3 }]
+    },
+    {
+      "name": "পরিমাণ শূন্য",
+      "input": { "batches": [], "qtyNeeded": 0, "today": "2026-11-12" },
+      "error": { "code": "invalid_number" }
+    }
+  ]
+}

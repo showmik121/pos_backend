@@ -3,7 +3,7 @@ import { takaToPoisha, poishaToTaka, percentToBp } from "../../src/domain/money.
 import { toBaseUnits, splitCartons } from "../../src/domain/units.js"
 import { classifyExpiry, daysUntil } from "../../src/domain/expiry.js"
 import { allocateFifo } from "../../src/domain/fifo.js"
-import { computeSale, settlePayments } from "../../src/domain/sale.js"
+import { computeCart, settlePayments, splitPayments } from "../../src/domain/cart.js"
 import { normalizePhone } from "../../src/domain/phone.js"
 import { DomainError } from "../../src/domain/errors.js"
 
@@ -83,61 +83,48 @@ describe("মেয়াদ ও FIFO", () => {
   })
 })
 
-describe("বিল ও পেমেন্ট", () => {
+describe("বিল ও পেমেন্ট (বিস্তারিত কেস গোল্ডেন ফিক্সচারে)", () => {
   it("নমুনা বিল #১০৪৩ = ৪৫৫ − ২৫ = ৪৩০", () => {
-    const s = computeSale(
+    const s = computeCart(
       [
-        { unitPrice: 15000, qty: 2 },
-        { unitPrice: 8500, qty: 1 },
-        { unitPrice: 2000, qty: 3 },
-        { unitPrice: 1000, qty: 1 },
+        { unitPrice: 15000, qty: 2, discount: 0 },
+        { unitPrice: 8500, qty: 1, discount: 0 },
+        { unitPrice: 2000, qty: 3, discount: 0 },
+        { unitPrice: 1000, qty: 1, discount: 0 },
       ],
       { type: "amount", value: 2500 },
     )
-    expect(s.subtotal).toBe(45500)
-    expect(s.discount).toBe(2500)
-    expect(s.total).toBe(43000)
+    expect(s).toEqual({ subtotal: 45500, lineDiscount: 0, billDiscount: 2500, total: 43000 })
   })
 
-  it("শতাংশ ছাড় ও সীমা", () => {
-    const s = computeSale([{ unitPrice: 10050, qty: 1 }], { type: "percentBp", value: 1000 })
-    expect(s.discount).toBe(1005)
-    expect(s.total).toBe(9045)
-    expect(codeOf(() => computeSale([{ unitPrice: 100, qty: 1 }], { type: "amount", value: 101 }))).toBe(
-      "discount_too_large",
-    )
-    expect(codeOf(() => computeSale([]))).toBe("empty_cart")
+  it("API-র payments[] নগদ/মোবাইলে ভাগ হয়", () => {
+    expect(
+      splitPayments([
+        { method: "cash", amount: 25000 },
+        { method: "bkash", amount: 7000 },
+        { method: "bkash", amount: 3000 },
+      ]),
+    ).toEqual({ cash: 25000, mobile: 10000, mobileMethod: "bkash" })
+    expect(splitPayments([])).toMatchObject({ cash: 0, mobile: 0 })
+  })
+
+  it("অচেনা মাধ্যম বা দুই মোবাইল মাধ্যম বাতিল", () => {
+    expect(codeOf(() => splitPayments([{ method: "nope", amount: 1 }]))).toBe("invalid_method")
+    expect(codeOf(() => splitPayments([{ method: "card", amount: 1 }]))).toBe("invalid_method")
+    expect(
+      codeOf(() =>
+        splitPayments([
+          { method: "bkash", amount: 1 },
+          { method: "nagad", amount: 1 },
+        ]),
+      ),
+    ).toBe("invalid_payments")
+    expect(codeOf(() => splitPayments([{ method: "cash", amount: 0 }]))).toBe("invalid_number")
   })
 
   it("পেমেন্ট ভাগ: ২৫০ নগদ + ১০০ বিকাশ + ৮০ বাকি", () => {
-    const r = settlePayments({
-      total: 43000,
-      payments: [
-        { method: "cash", amount: 25000 },
-        { method: "bkash", amount: 10000 },
-      ],
-      hasCustomer: true,
-    })
-    expect(r).toEqual({ paid: 35000, due: 8000, change: 0 })
-    expect(
-      codeOf(() =>
-        settlePayments({ total: 43000, payments: [{ method: "cash", amount: 1000 }], hasCustomer: false }),
-      ),
-    ).toBe("customer_required")
-  })
-
-  it("বেশি নগদ দিলে ফেরত; বেশি বিকাশ নয়", () => {
-    expect(
-      settlePayments({ total: 43000, payments: [{ method: "cash", amount: 50000 }], hasCustomer: false }),
-    ).toEqual({ paid: 43000, due: 0, change: 7000 })
-    expect(
-      codeOf(() =>
-        settlePayments({ total: 43000, payments: [{ method: "bkash", amount: 50000 }], hasCustomer: false }),
-      ),
-    ).toBe("overpaid_digital")
-    expect(
-      codeOf(() => settlePayments({ total: 43000, payments: [{ method: "nope", amount: 1 }], hasCustomer: true })),
-    ).toBe("invalid_method")
+    const r = settlePayments({ total: 43000, cash: 25000, mobile: 10000, mobileMethod: "bkash", hasCustomer: true })
+    expect(r).toMatchObject({ paid: 35000, due: 8000, change: 0 })
   })
 })
 

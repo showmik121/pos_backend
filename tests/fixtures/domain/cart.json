@@ -1,0 +1,72 @@
+{
+  "fn": "computeCart",
+  "note": "টাকা পয়সায়। percent = শতাংশ × ১০০, Math.round(base × percent / ১০০০০)",
+  "cases": [
+    {
+      "name": "সাধারণ বিল",
+      "input": { "lines": [{ "unitPrice": 10000, "qty": 2, "discount": 0 }], "bill": { "type": "amount", "value": 0 } },
+      "output": { "subtotal": 20000, "lineDiscount": 0, "billDiscount": 0, "total": 20000 }
+    },
+    {
+      "name": "লাইন ছাড়",
+      "input": { "lines": [{ "unitPrice": 5000, "qty": 3, "discount": 1000 }], "bill": { "type": "amount", "value": 0 } },
+      "output": { "subtotal": 15000, "lineDiscount": 1000, "billDiscount": 0, "total": 14000 }
+    },
+    {
+      "name": "বিলে টাকার ছাড়",
+      "input": { "lines": [{ "unitPrice": 10000, "qty": 1, "discount": 0 }], "bill": { "type": "amount", "value": 2500 } },
+      "output": { "subtotal": 10000, "lineDiscount": 0, "billDiscount": 2500, "total": 7500 }
+    },
+    {
+      "name": "শতাংশ ছাড় ৭.৫%",
+      "input": { "lines": [{ "unitPrice": 10000, "qty": 1, "discount": 0 }], "bill": { "type": "percent", "value": 750 } },
+      "output": { "subtotal": 10000, "lineDiscount": 0, "billDiscount": 750, "total": 9250 }
+    },
+    {
+      "name": "শতাংশ ছাড় লাইন ছাড়ের পরের ভিত্তিতে",
+      "input": { "lines": [{ "unitPrice": 10000, "qty": 1, "discount": 2000 }], "bill": { "type": "percent", "value": 1000 } },
+      "output": { "subtotal": 10000, "lineDiscount": 2000, "billDiscount": 800, "total": 7200 }
+    },
+    {
+      "name": "শতাংশে অর্ধেক পয়সা উপরে গোল হয়",
+      "input": { "lines": [{ "unitPrice": 333, "qty": 1, "discount": 0 }], "bill": { "type": "percent", "value": 5000 } },
+      "output": { "subtotal": 333, "lineDiscount": 0, "billDiscount": 167, "total": 166 }
+    },
+    {
+      "name": "একাধিক লাইন",
+      "input": {
+        "lines": [
+          { "unitPrice": 1500, "qty": 4, "discount": 0 },
+          { "unitPrice": 2550, "qty": 2, "discount": 100 }
+        ],
+        "bill": { "type": "amount", "value": 0 }
+      },
+      "output": { "subtotal": 11100, "lineDiscount": 100, "billDiscount": 0, "total": 11000 }
+    },
+    {
+      "name": "লাইন ছাড় দামের চেয়ে বেশি",
+      "input": { "lines": [{ "unitPrice": 1000, "qty": 1, "discount": 1001 }], "bill": { "type": "amount", "value": 0 } },
+      "error": { "code": "discount_too_large" }
+    },
+    {
+      "name": "বিল ছাড় মোটের চেয়ে বেশি",
+      "input": { "lines": [{ "unitPrice": 1000, "qty": 1, "discount": 0 }], "bill": { "type": "amount", "value": 1001 } },
+      "error": { "code": "discount_too_large" }
+    },
+    {
+      "name": "১০০% এর বেশি",
+      "input": { "lines": [{ "unitPrice": 1000, "qty": 1, "discount": 0 }], "bill": { "type": "percent", "value": 10001 } },
+      "error": { "code": "invalid_percent" }
+    },
+    {
+      "name": "পরিমাণ শূন্য",
+      "input": { "lines": [{ "unitPrice": 1000, "qty": 0, "discount": 0 }], "bill": { "type": "amount", "value": 0 } },
+      "error": { "code": "invalid_number" }
+    },
+    {
+      "name": "দশমিক দাম অগ্রহণযোগ্য",
+      "input": { "lines": [{ "unitPrice": 10.5, "qty": 1, "discount": 0 }], "bill": { "type": "amount", "value": 0 } },
+      "error": { "code": "invalid_number" }
+    }
+  ]
+}
