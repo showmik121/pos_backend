@@ -363,4 +363,46 @@ describe.skipIf(!URL_)("PostgreSQL: আসল ডাটাবেসে", () => {
     expect(log.json.totalLossPoisha).toBe(1200)
     expect((await call("GET", "/v1/batch-removals", { token: other.owner })).json.items).toEqual([])
   })
+
+  it("কাস্টমার API: ইডেমপোটেন্ট তৈরি, ফোন সংঘাত, দোকান-ভিত্তিক আলাদা, সমান্তরাল একই id", async () => {
+    const a = await shop()
+    const b = await shop()
+    const id = crypto.randomUUID()
+    const ph = `017${String(seed++ % 1e8).padStart(8, "0")}`
+    const body = { id, name: "করিম", phone: ph }
+    const racing = await Promise.all(Array.from({ length: 4 }, () => call("POST", "/v1/customers", { token: a.owner, body })))
+    expect(racing.map((r) => r.status).sort()).toEqual([200, 200, 200, 201])
+    expect((await call("POST", "/v1/customers", { token: a.owner, body: { ...body, name: "অন্য" } })).json.error.code).toBe("id_conflict")
+    const dup = await call("POST", "/v1/customers", { token: a.owner, body: { id: crypto.randomUUID(), name: "ডুপ", phone: ph } })
+    expect([dup.status, dup.json.error.code]).toEqual([409, "duplicate_phone"])
+    expect((await call("GET", `/v1/customers/${id}`, { token: b.owner })).status).toBe(404)
+    expect((await call("POST", "/v1/customers", { token: b.owner, body })).status).toBe(201)
+    expect((await call("GET", `/v1/customers?q=${encodeURIComponent("করি")}`, { token: a.owner })).json.items).toHaveLength(1)
+  })
+
+  it("বাকির খাতা API: আগের বাকি, আদায়, বেশি আদায় আটকানো, সমান্তরাল আদায়ে ব্যালান্স ঋণাত্মক হয় না, ইডেমপোটেন্সি, বাকির তালিকা", async () => {
+    const s = await shop()
+    const cid = crypto.randomUUID()
+    await call("POST", "/v1/customers", { token: s.owner, body: { id: cid, name: "বাকিওয়ালা", phone: "" } })
+    expect((await call("POST", `/v1/customers/${cid}/opening-balances`, { token: s.staff, body: { id: crypto.randomUUID(), amount: 1000 } })).status).toBe(403)
+    const open = await call("POST", `/v1/customers/${cid}/opening-balances`, { token: s.owner, body: { id: crypto.randomUUID(), amount: 1000 } })
+    expect([open.status, open.json.balancePoisha]).toEqual([201, 1000])
+    // ১০০ করে ১৫টি সমান্তরাল আদায়: বাকি ১০০০ তাই ঠিক ১০টি সফল
+    const pays = await Promise.all(
+      Array.from({ length: 15 }, () => call("POST", `/v1/customers/${cid}/payments`, { token: s.staff, body: { id: crypto.randomUUID(), amount: 100, method: "nagad" } })),
+    )
+    expect(pays.filter((r) => r.status === 201)).toHaveLength(10)
+    expect(pays.filter((r) => r.status === 409).every((r) => r.json.error.code === "overpay")).toBe(true)
+    expect((await call("GET", `/v1/customers/${cid}`, { token: s.owner })).json.customer.balancePoisha).toBe(0)
+    const replay = pays.find((r) => r.status === 201)!.json.entry
+    const again = await call("POST", `/v1/customers/${cid}/payments`, { token: s.staff, body: { id: replay.id, amount: 100, method: "nagad" } })
+    expect([again.status, again.json.balancePoisha]).toEqual([200, 0])
+    const ledger = await call("GET", `/v1/customers/${cid}/ledger?limit=100`, { token: s.owner })
+    expect(ledger.json.items).toHaveLength(11)
+    expect((await call("GET", "/v1/dues", { token: s.owner })).json.items).toEqual([])
+    await call("POST", `/v1/customers/${cid}/opening-balances`, { token: s.owner, body: { id: crypto.randomUUID(), amount: 700 } })
+    const dues = await call("GET", "/v1/dues", { token: s.owner })
+    expect(dues.json.items.map((r: { balancePoisha: number }) => r.balancePoisha)).toEqual([700])
+    expect(dues.json.totalDuePoisha).toBe(700)
+  })
 })
