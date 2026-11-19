@@ -73,6 +73,12 @@ export function createPgRepo(opts: { connectionString: string; max?: number }): 
         return rows[0] ?? null
       }),
 
+    renameStore: (storeId, name) =>
+      withStore(storeId, async (tx) => {
+        const rows = await tx<Store[]>`UPDATE stores SET name = ${name} WHERE id = ${storeId} RETURNING id, name, kind`
+        return rows[0] ?? null
+      }),
+
     createStaff: (storeId, { name, phone, passwordHash }) =>
       withStore(storeId, async (tx) => {
         try {

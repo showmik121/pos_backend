@@ -96,6 +96,26 @@ describe("API", () => {
     })
   })
 
+  it("মালিক দোকানের নাম বদলাতে পারে, স্টাফ পারে না, খালি নাম বাতিল", async () => {
+    const { call } = start()
+    const reg = await call("POST", "/v1/auth/register-store", { body: owner })
+    const t = reg.json.token
+    await call("POST", "/v1/staff", { token: t, body: { name: "করিম", phone: "01811111111", password: "staffpass1" } })
+    const staff = (await call("POST", "/v1/auth/login", { body: { phone: "01811111111", password: "staffpass1" } })).json
+
+    expect((await call("PATCH", "/v1/store", { token: staff.token, body: { name: "নতুন" } })).status).toBe(403)
+    expect((await call("PATCH", "/v1/store", { token: t, body: { name: "   " } })).status).toBe(400)
+    expect((await call("PATCH", "/v1/store", { token: t, body: { name: "x".repeat(121) } })).status).toBe(400)
+    expect((await call("PATCH", "/v1/store")).status).toBe(401)
+
+    const ok = await call("PATCH", "/v1/store", { token: t, body: { name: "  রহমান ফার্মেসি ও কসমেটিক্স  " } })
+    expect(ok.status).toBe(200)
+    expect(ok.json.store.name).toBe("রহমান ফার্মেসি ও কসমেটিক্স")
+    expect(ok.json.store.kind).toBe("pharmacy")
+    const me = await call("GET", "/v1/me", { token: t })
+    expect(me.json.store.name).toBe("রহমান ফার্মেসি ও কসমেটিক্স")
+  })
+
   it("দোকান খোলা → লগইন → /me", async () => {
     const { call } = start()
     const reg = await call("POST", "/v1/auth/register-store", { body: owner })
