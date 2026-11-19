@@ -2,8 +2,10 @@ import postgres from "postgres"
 import { DomainError } from "../domain/errors.js"
 import { createPgCatalog } from "./pg-catalog.js"
 import { createPgDues } from "./pg-dues.js"
+import { createPgProjection } from "./pg-projection.js"
 import { createPgSales } from "./pg-sales.js"
 import { createPgStock } from "./pg-stock.js"
+import type { ProjectionRepo } from "./projection.js"
 import type { NewSyncEvent, PublicUser, Repo, Store, SyncEvent, UserWithHash } from "./types.js"
 
 // PostgreSQL (Supabase) রিপোজিটরি।
@@ -24,7 +26,7 @@ function mapError(err: unknown): unknown {
   return err
 }
 
-export function createPgRepo(opts: { connectionString: string; max?: number }): Repo {
+export function createPgRepo(opts: { connectionString: string; max?: number }): Repo & { projection: ProjectionRepo } {
   const sql = postgres(opts.connectionString, {
     prepare: false,
     max: opts.max ?? 5,
@@ -45,6 +47,7 @@ export function createPgRepo(opts: { connectionString: string; max?: number }): 
     ...createPgStock(withStore),
     ...createPgDues(withStore),
     ...createPgSales(withStore),
+    projection: createPgProjection(withStore),
 
     async registerStore({ storeName, storeKind, ownerName, phone, passwordHash }) {
       try {

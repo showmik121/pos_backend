@@ -473,4 +473,88 @@ describe.skipIf(!URL_)("PostgreSQL: আসল ডাটাবেসে", () => {
     expect((await call("GET", `/v1/sales/${due.json.sale.id}`, { token: other.owner })).status).toBe(404)
     expect((await call("GET", "/v1/sales", { token: other.owner })).json.items).toEqual([])
   })
+
+  describe("প্রজেক্টর: ইভেন্ট → কাঠামোবদ্ধ টেবিল", () => {
+    const U = (n: number) => `71000000-0000-4000-8000-${String(n).padStart(12, "0")}`
+    const T = (m: number) => `2026-11-12T06:${String(m).padStart(2, "0")}:00.000Z`
+    const E = (n: number, kind: string, m: number, payload: Record<string, unknown>) => ({ id: U(n), kind, at: T(m), payload })
+    const prod = { id: U(1), name: "প্যারা", barcodes: [{ code: `89${seed++}`, packSize: 1 }], unit: "strip", cartonSize: 10, costPoisha: 300, pricePoisha: 500, minStock: 5, category: "ওষুধ", open: false, createdAt: T(0) }
+    const cust = { id: U(2), name: "করিম", phone: "", createdAt: T(0) }
+    const stockIn = { batchId: U(10), productId: U(1), batchNo: "B1", expiryDate: "2027-12-31", qty: 10, costPoisha: 300, receivedAt: T(1) }
+    const saleBody = {
+      id: U(50), no: 1001, prefix: "A", at: T(3), cashier: "রুবেল",
+      lines: [{ productId: U(1), name: "প্যারা", qty: 4, unitPrice: 500, discount: 0, allocations: [{ batchId: U(10), batchNo: "B1", qty: 4, costPoisha: 300 }] }],
+      subtotal: 2000, lineDiscount: 0, billDiscount: 0, total: 2000, payments: [{ method: "cash", amount: 1500 }], change: 0, due: 500,
+      customerId: U(2), customerName: "করিম",
+    }
+    const saleLedger = { id: U(61), customerId: U(2), at: T(3), kind: "sale", amount: 500, saleNo: 1001, salePrefix: "A", by: "রুবেল" }
+    const flow = () => [
+      E(100, "product_upserted", 0, { product: prod }),
+      E(101, "customer_upserted", 0, { customer: cust }),
+      E(102, "stock_in", 1, stockIn),
+      E(103, "sale_completed", 3, { sale: saleBody, ledger: saleLedger }),
+    ]
+    const qty = async (storeId: string) => {
+      const r = await raw`SELECT qty_remaining FROM stock_batches WHERE store_id = ${storeId} AND id = ${U(10)}`
+      return Number(r[0]?.qty_remaining)
+    }
+
+    it("পূর্ণ প্রবাহ: পণ্য, স্টক, বাকির বিল, আদায়, ব্যাচ সরানো — আর দ্বিতীয়বার দিলে কিছু বদলায় না", async () => {
+      const s = await shop()
+      const evs = [
+        ...flow(),
+        E(104, "due_received", 4, { entry: { id: U(62), customerId: U(2), at: T(4), kind: "payment", amount: 200, saleNo: null, by: "মালিক" } }),
+        E(105, "batch_removed", 5, { removed: { id: U(70), at: T(5), by: "মালিক", batchId: U(10), productId: U(1), productName: "প্যারা", batchNo: "B1", expiryDate: "2027-12-31", qty: 6, costPoisha: 300, reason: "মেয়াদ শেষ" } }),
+      ]
+      const r1 = await repo.projection.project(s.storeId, evs)
+      expect(r1).toEqual({ applied: 6, deferred: 0, ignored: 0, duplicate: 0, failed: 0 })
+      const bill = await call("GET", `/v1/sales/${U(50)}`, { token: s.owner })
+      expect(bill.status).toBe(200)
+      expect(bill.json.totalPoisha).toBe(2000)
+      expect(bill.json.duePoisha).toBe(500)
+      expect(bill.json.cashierName).toBe("রুবেল")
+      expect(await qty(s.storeId)).toBe(0)
+      const bal = await raw`SELECT coalesce(sum(amount_poisha),0) AS b FROM due_ledger WHERE store_id = ${s.storeId} AND customer_id = ${U(2)}`
+      expect(Number(bal[0]?.b)).toBe(300)
+      const r2 = await repo.projection.project(s.storeId, evs)
+      expect(r2.duplicate).toBe(6)
+      expect(r2.applied).toBe(0)
+      expect(await qty(s.storeId)).toBe(0)
+    })
+
+    it("ক্রম উল্টো হলেও একই ফল: বিক্রি আগে এলে অপেক্ষায় থাকে, পণ্য-স্টক এলে বসে", async () => {
+      const s = await shop()
+      const [p, c, st, sl] = flow() as [ReturnType<typeof E>, ReturnType<typeof E>, ReturnType<typeof E>, ReturnType<typeof E>]
+      const first = await repo.projection.project(s.storeId, [sl])
+      expect(first.deferred).toBe(1)
+      expect((await call("GET", `/v1/sales/${U(50)}`, { token: s.owner })).status).toBe(404)
+      const second = await repo.projection.project(s.storeId, [st, c, p])
+      expect(second.failed).toBe(0)
+      expect((await call("GET", `/v1/sales/${U(50)}`, { token: s.owner })).status).toBe(200)
+      expect(await qty(s.storeId)).toBe(6)
+    })
+
+    it("বাতিল: স্টক ফেরে, বাকি কমে, দ্বিতীয়বার দিলে দ্বিগুণ হয় না", async () => {
+      const s = await shop()
+      const voidEv = E(110, "sale_voided", 6, { saleId: U(50), voided: { at: T(6), by: "মালিক", reason: "ভুল বিল" }, ledger: { id: `void:${U(50)}`, customerId: U(2), at: T(6), kind: "void", amount: 500, saleNo: 1001, salePrefix: "A", by: "মালিক" } })
+      await repo.projection.project(s.storeId, [...flow(), voidEv])
+      expect(await qty(s.storeId)).toBe(10)
+      const bal = await raw`SELECT coalesce(sum(amount_poisha),0) AS b FROM due_ledger WHERE store_id = ${s.storeId} AND customer_id = ${U(2)}`
+      expect(Number(bal[0]?.b)).toBe(0)
+      await repo.projection.project(s.storeId, [{ ...voidEv, id: U(111) }])
+      expect(await qty(s.storeId)).toBe(10)
+    })
+
+    it("শেষ-বদল জেতে: পুরনো পণ্য-ইভেন্ট পরে এলেও নাম বদলায় না; খারাপ ইভেন্ট বাকিদের আটকায় না", async () => {
+      const s = await shop()
+      const newer = E(120, "product_upserted", 9, { product: { ...prod, name: "নতুন নাম" } })
+      const older = E(121, "product_upserted", 2, { product: { ...prod, name: "পুরনো নাম" } })
+      const junk = E(122, "product_upserted", 3, { product: { ...prod, unit: "kg" } })
+      const r = await repo.projection.project(s.storeId, [newer, older, junk])
+      expect(r.ignored).toBe(1)
+      expect(r.failed).toBe(0)
+      const row = await raw`SELECT name FROM products WHERE store_id = ${s.storeId} AND id = ${U(1)}`
+      expect(row[0]?.name).toBe("নতুন নাম")
+    })
+  })
 })

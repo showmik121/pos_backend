@@ -148,7 +148,10 @@ function mapSale(raw: unknown, ledgerRaw: unknown): { sale: ProjectedSale; ledge
       return { batchId: idOf(a.batchId, "batchId"), batchNo: str(a.batchNo ?? "", "batchNo", 60, true), qty: int(a.qty, "ভাগের পরিমাণ", 1), costPoisha: int(a.costPoisha, "ক্রয়মূল্য") }
     })
     if (allocations.reduce((n: number, a: { qty: number }) => n + a.qty, 0) !== qty) throw bad("ব্যাচ-ভাগের যোগফল পরিমাণের সমান নয়")
-    return { productId: idOf(l.productId, "productId"), name: str(l.name, "name", 200), qty, unitPrice: int(l.unitPrice, "দাম"), discount: int(l.discount ?? 0, "ছাড়"), allocations }
+    const unitPrice = int(l.unitPrice, "দাম")
+    const discount = int(l.discount ?? 0, "ছাড়")
+    if (discount > unitPrice * qty) throw bad("লাইনের ছাড় দামের চেয়ে বেশি")
+    return { productId: idOf(l.productId, "productId"), name: str(l.name, "name", 200), qty, unitPrice, discount, allocations }
   })
   const subtotal = int(raw.subtotal, "subtotal")
   const lineDiscount = int(raw.lineDiscount, "lineDiscount")
