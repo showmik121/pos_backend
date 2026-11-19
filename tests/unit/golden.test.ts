@@ -7,6 +7,7 @@ import { computeCart, settlePayments } from "../../src/domain/cart.js"
 import { DomainError } from "../../src/domain/errors.js"
 import { classifyExpiry } from "../../src/domain/expiry.js"
 import { allocateFifo } from "../../src/domain/fifo.js"
+import { planStockIn } from "../../src/domain/stock.js"
 import { toBaseUnits } from "../../src/domain/units.js"
 
 // গোল্ডেন ফিক্সচার: সত্য-উৎস ফ্রন্টএন্ড (pos_fontend/tests/fixtures/domain)। এখানে হুবহু কপি;
@@ -28,6 +29,7 @@ const adapters: Record<string, (i: any) => unknown> = {
   computeCart: (i) => computeCart(i.lines, i.bill),
   settlePayments: (i) => settlePayments(i),
   allocateFifo: (i) => allocateFifo(i.batches, i.qtyNeeded, i.today),
+  planStockIn: ({ product, ...cmd }) => planStockIn(product, { receiptId: "r", batchId: "b", productId: "p1", ...cmd }),
 }
 
 const files = readdirSync(DIR).filter((f) => f.endsWith(".json")).sort()

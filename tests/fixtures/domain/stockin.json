@@ -1,0 +1,66 @@
+{
+  "fn": "planStockIn",
+  "note": "স্টক-জমার হিসাব: কত পিস, প্রতি পিসের ক্রয়মূল্য, ছাঁটা ব্যাচ নম্বর, বিক্রয়মূল্য (না দিলে পণ্যের আগেরটা)। FE-তে stockIn() এর ফল (ব্যাচ ও পণ্য), BE-তে planStockIn()",
+  "cases": [
+    {
+      "name": "পিসে জমা, বিক্রয়মূল্য না দিলে আগেরটাই",
+      "input": { "product": { "cartonSize": 10, "pricePoisha": 500 }, "qty": 12, "unit": "piece", "batchNo": "", "expiryDate": null, "costPoisha": 300, "pricePoisha": null, "requireBatchAndExpiry": false },
+      "output": { "pieces": 12, "costPerPiece": 300, "batchNo": "", "pricePoisha": 500 }
+    },
+    {
+      "name": "কার্টনে জমা: প্রতি পিসের খরচ কার্টনের খরচ ÷ কার্টন সাইজ",
+      "input": { "product": { "cartonSize": 10, "pricePoisha": 500 }, "qty": 2, "unit": "carton", "batchNo": "", "expiryDate": null, "costPoisha": 3000, "pricePoisha": null, "requireBatchAndExpiry": false },
+      "output": { "pieces": 20, "costPerPiece": 300, "batchNo": "", "pricePoisha": 500 }
+    },
+    {
+      "name": "কার্টনের খরচ ভাগে ভগ্নাংশ হলে গোল (২০০০ ÷ ৩ = ৬৬৭)",
+      "input": { "product": { "cartonSize": 3, "pricePoisha": 500 }, "qty": 1, "unit": "carton", "batchNo": "", "expiryDate": null, "costPoisha": 2000, "pricePoisha": null, "requireBatchAndExpiry": false },
+      "output": { "pieces": 3, "costPerPiece": 667, "batchNo": "", "pricePoisha": 500 }
+    },
+    {
+      "name": "নতুন বিক্রয়মূল্য দিলে সেটাই বসে",
+      "input": { "product": { "cartonSize": 10, "pricePoisha": 500 }, "qty": 5, "unit": "piece", "batchNo": "", "expiryDate": null, "costPoisha": 300, "pricePoisha": 650, "requireBatchAndExpiry": false },
+      "output": { "pieces": 5, "costPerPiece": 300, "batchNo": "", "pricePoisha": 650 }
+    },
+    {
+      "name": "বিক্রয়মূল্য শূন্য দিলে আগেরটাই থাকে",
+      "input": { "product": { "cartonSize": 10, "pricePoisha": 500 }, "qty": 5, "unit": "piece", "batchNo": "", "expiryDate": null, "costPoisha": 300, "pricePoisha": 0, "requireBatchAndExpiry": false },
+      "output": { "pieces": 5, "costPerPiece": 300, "batchNo": "", "pricePoisha": 500 }
+    },
+    {
+      "name": "ব্যাচ নম্বরের দুই পাশের ফাঁকা কাটা যায় (ফার্মেসি)",
+      "input": { "product": { "cartonSize": 10, "pricePoisha": 500 }, "qty": 10, "unit": "piece", "batchNo": "  B1 ", "expiryDate": "2027-06-30", "costPoisha": 300, "pricePoisha": null, "requireBatchAndExpiry": true },
+      "output": { "pieces": 10, "costPerPiece": 300, "batchNo": "B1", "pricePoisha": 500 }
+    },
+    {
+      "name": "ফার্মেসিতে ব্যাচ নম্বর না থাকলে ত্রুটি",
+      "input": { "product": { "cartonSize": 10, "pricePoisha": 500 }, "qty": 10, "unit": "piece", "batchNo": "   ", "expiryDate": "2027-06-30", "costPoisha": 300, "pricePoisha": null, "requireBatchAndExpiry": true },
+      "error": { "code": "batch_required" }
+    },
+    {
+      "name": "ফার্মেসিতে মেয়াদ না থাকলে ত্রুটি",
+      "input": { "product": { "cartonSize": 10, "pricePoisha": 500 }, "qty": 10, "unit": "piece", "batchNo": "B1", "expiryDate": null, "costPoisha": 300, "pricePoisha": null, "requireBatchAndExpiry": true },
+      "error": { "code": "expiry_required" }
+    },
+    {
+      "name": "কার্টন সাইজ ১ হলে কার্টনে জমা যায় না",
+      "input": { "product": { "cartonSize": 1, "pricePoisha": 500 }, "qty": 2, "unit": "carton", "batchNo": "", "expiryDate": null, "costPoisha": 3000, "pricePoisha": null, "requireBatchAndExpiry": false },
+      "error": { "code": "no_carton" }
+    },
+    {
+      "name": "পরিমাণ শূন্য",
+      "input": { "product": { "cartonSize": 10, "pricePoisha": 500 }, "qty": 0, "unit": "piece", "batchNo": "", "expiryDate": null, "costPoisha": 300, "pricePoisha": null, "requireBatchAndExpiry": false },
+      "error": { "code": "invalid_number" }
+    },
+    {
+      "name": "ক্রয়মূল্য ঋণাত্মক",
+      "input": { "product": { "cartonSize": 10, "pricePoisha": 500 }, "qty": 5, "unit": "piece", "batchNo": "", "expiryDate": null, "costPoisha": -1, "pricePoisha": null, "requireBatchAndExpiry": false },
+      "error": { "code": "invalid_number" }
+    },
+    {
+      "name": "ক্রয়মূল্য ভগ্নাংশ (পয়সা পূর্ণসংখ্যা)",
+      "input": { "product": { "cartonSize": 10, "pricePoisha": 500 }, "qty": 5, "unit": "piece", "batchNo": "", "expiryDate": null, "costPoisha": 10.5, "pricePoisha": null, "requireBatchAndExpiry": false },
+      "error": { "code": "invalid_number" }
+    }
+  ]
+}
