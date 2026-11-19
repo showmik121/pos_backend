@@ -1,0 +1,11 @@
+CI status via the public GitHub Actions API, read at 2026-11-19T20:58Z (no authentication, read-only).
+
+## showmik121/pos_backend branch chore/handover
+total runs: 2
+CI | in_progress | - | e4052fe | push | 2026-11-19T20:58:30Z
+CI | completed | success | 7b15588 | push | 2026-11-19T20:54:11Z
+
+## showmik121/pos_fontend branch chore/handover
+total runs: 0
+
+Note: the pos_fontend workflow triggers only on pull_request and pushes to main, so branch pushes do not run it; open the PR to start it.

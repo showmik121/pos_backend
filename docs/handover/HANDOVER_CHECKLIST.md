@@ -33,7 +33,7 @@
 | A1 | সব বদল রিমোটে পুশ ও `main`-এ মার্জ | ⚠ পুশ হয়েছে, মার্জ হয়নি | ২০২৬-১১-২০: `chore/handover` দুই রিপোতে পুশ (ব্যাকএন্ড `7b15588`, ফ্রন্টএন্ড `a72f3da`; `ls-remote` মিলেছে, `main` অপরিবর্তিত) — `handover-evidence/git-state.txt` | PR খুলুন (ব্যাকএন্ড আগে): `…/pos_backend/pull/new/chore/handover`, `…/pos_fontend/pull/new/chore/handover`; CI দেখুন; মার্জ। মালিক: ________ |
 | A2 | বদলের তালিকা (ব্যাকএন্ড `chore/handover`) | ✅ | `c403cc7` লকফাইল/`node_modules` সিমলিংক সরানো/`npm ci`; `c8d8397` সিংক-সাদাতালিকা; `c4d7aa3` `.gitattributes`; `7b15588` RUNBOOK/ONBOARDING | — |
 | A3 | বদলের তালিকা (ফ্রন্টএন্ড `chore/handover`) | ✅ | `faa50ce` লকফাইল/`npm ci`; `f009ccb` বিকৃত সিংক-ইভেন্ট; `6d16627` E2E+৩৭৫px; `302f7c3` `.gitattributes`; `20ae5ae` ফন্ট; `a72f3da` RUNBOOK/ONBOARDING | — |
-| A4 | এই বদলে CI সবুজ | 🔎 | কিছু পুশ হয়নি, CI চলেনি | পুশের পর Actions দেখুন |
+| A4 | এই বদলে CI সবুজ | ⚠ ব্যাকএন্ড ✅ (শাখা-পুশ), ফ্রন্টএন্ড 🔎 | ব্যাকএন্ড: `7b15588`-এ CI `success` (Linux, GitHub Actions), পরের কমিটে চলছিল; ফ্রন্টএন্ড: ০টি রান, কারণ ওয়ার্কফ্লো শুধু PR ও `main`-এ চলে — `handover-evidence/ci-status.txt` | ফ্রন্টএন্ড PR খুলে CI দেখুন (`e2e-real` ব্যাকএন্ড `main`-এর লকফাইল চায়: PR_DESCRIPTIONS.md-এর ক্রম-অংশ দেখুন) |
 | A5 | `main`-এ branch protection / প্রয়োজনীয় চেক | 🔎 | রিমোট সেটিং দেখার উপায় ছিল না | GitHub সেটিংসে চালু করুন |
 | A6 | অন্য শাখাগুলোর হিসাব: ফ্রন্টএন্ডে ২৭টি, ব্যাকএন্ডে ১৩টি রিমোট শাখা | ❌ | `git branch -r` | কোনগুলো মার্জ/মুছবে ঠিক করুন; বিশেষত ব্যাকএন্ডের `feat/dues-api`→`feat/projector` ধারা (মাইগ্রেশন ০০৭-০০৯) যা অপর্যালোচিত |
 
