@@ -4,7 +4,7 @@ import { createMemoryCatalog } from "./memory-catalog.js"
 import { createMemoryDues } from "./memory-dues.js"
 import { createMemorySales } from "./memory-sales.js"
 import { createMemoryStock } from "./memory-stock.js"
-import type { AuthUser, ClientErrorReport, NewSyncEvent, PublicUser, Repo, Store, StoreStatus, SyncEvent, UserWithHash } from "./types.js"
+import type { AccountActivity, AuthUser, ClientErrorReport, NewSyncEvent, PublicUser, Repo, Store, StoreStatus, SyncEvent, UserWithHash } from "./types.js"
 
 const TRIAL_DAYS = 14
 
@@ -21,6 +21,7 @@ export function createMemoryRepo(
   const attempts = new Map<string, number[]>()
   const clientErrors = new Map<string, ClientErrorReport & { count: number }>()
   const stores = new Map<string, Store>()
+  const activity = new Map<string, AccountActivity[]>() // newest first
   const users = new Map<string, UserWithHash>()
   const devices = new Map<string, string[]>() // storeId -> [deviceId...] (সূচক = কোডের ক্রম)
   const events: Array<SyncEvent & { storeId: string }> = []
@@ -105,6 +106,11 @@ export function createMemoryRepo(
       const s = stores.get(storeId)
       if (!s) throw new Error("no such store")
       stores.set(storeId, { ...s, status, statusMessage: message })
+      activity.set(storeId, [{ at: new Date(now()).toISOString(), status, message }, ...(activity.get(storeId) ?? [])])
+    },
+
+    async listAccountActivity(storeId) {
+      return (activity.get(storeId) ?? []).slice(0, 20).map((e) => ({ ...e }))
     },
 
     async getStore(storeId) {

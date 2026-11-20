@@ -3,9 +3,10 @@ import { decryptSecret, encryptSecret, generateRecoveryCodes, hashRecoveryCode }
 import { dummyHash, hashPassword, verifyPassword } from "../../src/auth/password.js"
 import { loginEmailBucket, loginIpBucket, loginPairBucket } from "../../src/auth/admin-throttle-keys.js"
 import { generateTotpSecret, otpauthUri, verifyTotp } from "../../src/auth/totp.js"
-import { ADMIN_POLICY, type AdminRouteId, type RequestOf, type ResponseOf } from "../../src/contract/admin-api.js"
+import { ADMIN_POLICY, type AdminRouteId, type RequestOf, type ResponseOf, type StatusChangeResult } from "../../src/contract/admin-api.js"
 import type { AdminRecord, AdminRepo, AdminSession, AdminSummary, AuditEntry } from "../../src/db/admin.js"
 import { DomainError } from "../../src/domain/errors.js"
+import type { TenantStatusAction } from "../../src/domain/tenant-admin.js"
 
 // Handlers for /v1/admin. Typed from the contract: a route cannot exist without a contract entry, and the
 // dispatcher (admin.ts) does auth, permission, step-up, body validation and AUDIT around every one of these.
@@ -30,7 +31,7 @@ export interface HandlerArgs<K extends AdminRouteId> {
 }
 
 /** What the handler adds to its audit row (never secrets: no passwords, TOTP secrets or recovery codes). */
-export type AuditExtra = Partial<Pick<AuditEntry, "adminId" | "targetType" | "targetId" | "reason" | "before" | "after">>
+export type AuditExtra = Partial<Pick<AuditEntry, "adminId" | "targetType" | "targetId" | "storeId" | "reason" | "before" | "after">>
 export interface HandlerResult<K extends AdminRouteId> {
   body: ResponseOf<K>
   audit?: AuditExtra
@@ -75,6 +76,16 @@ async function checkTotp(ctx: AdminCtx, admin: AdminRecord, code: string): Promi
   const step = verifyTotp(decryptSecret(admin.totpSecretEnc, ctx.totpEncKey), code, ctx.now())
   if (step === null || !(await ctx.repo.totpUseStep(admin.id, step))) throw badCode()
   return step
+}
+
+const tenantNotFound = () => new DomainError("not_found", "Tenant not found.")
+const tenantAudit = (storeId: string, extra: AuditExtra = {}): AuditExtra => ({ targetType: "tenant", targetId: storeId, storeId, ...extra })
+
+async function changeStatus(
+  ctx: AdminCtx, session: AdminSession, storeId: string, action: TenantStatusAction, reason: string, message: string | null,
+): Promise<{ body: StatusChangeResult; audit: AuditExtra }> {
+  const r = await ctx.repo.changeTenantStatus({ storeId, action, adminId: session.adminId, reason, message })
+  return { body: r, audit: tenantAudit(storeId, { reason, before: { status: r.fromStatus }, after: { status: r.toStatus, ownerMessage: message } }) }
 }
 
 export const adminHandlers: Handlers = {
@@ -217,6 +228,50 @@ export const adminHandlers: Handlers = {
       body: { ok: true as const },
       audit: { targetType: "admin", targetId: target.id, reason: body.reason ?? null, after: { passwordReset: true, enrolled: false, sessionsRevoked: true } },
     }
+  },
+
+  // ---------------------------------------------------------------- tenants (A1)
+  async "tenants.list"({ ctx, body }) {
+    return { body: await ctx.repo.listTenants(body) }
+  },
+
+  async "tenants.get"({ ctx, params }) {
+    const detail = await ctx.repo.getTenant(params.id!)
+    if (!detail) throw tenantNotFound()
+    return { body: detail }
+  },
+
+  // Revealing a number is itself an audited action (PRD §6.2): the row records who, which tenant, why, and how many numbers.
+  async "tenants.revealPhone"({ ctx, body, params }) {
+    const phones = await ctx.repo.revealPhones(params.id!)
+    if (!phones) throw tenantNotFound()
+    return { body: { phones }, audit: tenantAudit(params.id!, { reason: body.reason, after: { revealed: phones.length } }) }
+  },
+
+  async "tenants.suspend"({ ctx, body, params, session }) {
+    return changeStatus(ctx, session!, params.id!, "suspend", body.reason, body.message ?? null)
+  },
+  async "tenants.readOnly"({ ctx, body, params, session }) {
+    return changeStatus(ctx, session!, params.id!, "read_only", body.reason, body.message ?? null)
+  },
+  async "tenants.reactivate"({ ctx, body, params, session }) {
+    return changeStatus(ctx, session!, params.id!, "reactivate", body.reason, null)
+  },
+
+  async "tenants.notes.list"({ ctx, params }) {
+    const notes = await ctx.repo.listNotes(params.id!)
+    if (!notes) throw tenantNotFound()
+    return { body: { notes } }
+  },
+  // The note text stays out of the audit row on purpose: it is free text and may name people. The row keeps the id and tags.
+  async "tenants.notes.add"({ ctx, body, params, session }) {
+    const note = await ctx.repo.addNote(params.id!, session!.adminId, body.body, body.tags)
+    if (!note) throw tenantNotFound()
+    return { body: { note }, audit: tenantAudit(params.id!, { after: { noteId: note.id, tags: note.tags } }) }
+  },
+
+  async "audit.list"({ ctx, body }) {
+    return { body: await ctx.repo.listAudit(body) }
   },
 
   async "admins.reset2fa"({ ctx, body, params, session }) {

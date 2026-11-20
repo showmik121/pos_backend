@@ -101,6 +101,33 @@ so the order below is **mandatory**. Do not merge before step 5 is done. Nothing
 - Rotating `ADMIN_JWT_SECRET` signs every admin out. Rotating `ADMIN_TOTP_ENC_KEY` invalidates all stored 2FA secrets: every admin must be reset with `--reset` and re-enrol.
 - Admin audit rows cannot be edited or deleted by any role; keep >= 2 years (PRD A-10).
 
+## ৩খ. Admin panel (A1): tenant ops rollout and rollback (English)
+Design: `docs/adr/0007`. Migration `013_admin_tenant_ops.sql`, rollback `db/rollback/013_down.sql`. Needs 012 applied first.
+
+**Rollout order (mandatory; the order is a hazard):** the new shop API calls `sync_touch_store()` on every sync push/pull. If the API is deployed before 013 exists,
+**every shop sync fails** (the phones keep their queue, but nothing uploads). A push to backend `main` auto-deploys and does NOT run migrations.
+1. Backup (section ৪). Confirm 012 is applied (3ক step 2); if not, apply 012 first and run 3ক step 4's checks.
+2. Apply 013 with `npm run db:migrate` (one transaction, additive). Verify:
+   ```sql
+   SELECT count(*) FROM information_schema.table_privileges WHERE grantee = 'admin_app';           -- still 0
+   SELECT has_function_privilege('admin_app', 'admin_tenant_list(text,text,text,integer,text,text,integer,integer)', 'EXECUTE'); -- true
+   SELECT column_name FROM information_schema.column_privileges WHERE grantee='pos_app' AND table_name='tenant_status_events'; -- id, store_id, at, to_status, message (NO reason)
+   ```
+3. Only then merge/deploy the backend. Check `/health`, a shop sync, and `GET /api/v1/admin/tenants` (401 without a token).
+4. Add the admin site origin to the `ALLOWED_ORIGINS` secret and redeploy (as 3ক step 8). Build `pos_admin` with `NEXT_PUBLIC_ADMIN_API_URL` and `ADMIN_API_ORIGIN` set to the same API origin.
+5. Host `pos_admin` on something that honours `out/_headers` (Cloudflare Pages / Netlify) behind Cloudflare Access or an IP allow-list (open question Q9). Not decided yet: A1 is not live-ready until it is.
+
+**Rollback**
+- Code first (section ২): old shop code never calls `sync_touch_store`, so it is safe on either schema.
+- Schema: run `db/rollback/013_down.sql` by hand as `postgres` with `psql -v ON_ERROR_STOP=1`, **before** `012_down.sql`. It deletes the status-event history and notes and the `last_sync_at` column,
+  and it removes the `schema_migrations` row, so **revert or remove the 013 file from the deployed commit first**, or the next `db:migrate` re-applies it.
+- Rehearse apply, rollback and re-apply of 012 and 013 on staging before live; record it in `docs/handover-evidence/`.
+
+**Operational notes**
+- Search by phone is exact only; partial numbers match nothing (masking cannot be probed). Full numbers: Reveal (reason required, audited).
+- If the audit write fails after a status change committed, the API returns 500 and logs `admin action APPLIED but audit write failed ... request=<id>`. Check the tenant's status before retrying; a retry answers `invalid_transition`. Reconcile the audit trail by hand with that request id.
+- `admin_tenant_set_status` waits at most 3 s for the store row lock, then fails (retry).
+
 ## ৪. ব্যাকআপ নেওয়া
 **প্রথমে আপনার Supabase প্ল্যান দেখুন (Dashboard → Database → Backups):**
 - Pro, Team ও Enterprise-এ প্রতিদিন স্বয়ংক্রিয় ব্যাকআপ; Pro-তে শেষ ৭ দিন ([Supabase: Database Backups](https://supabase.com/docs/guides/database/backups))।

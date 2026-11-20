@@ -1,4 +1,6 @@
+import type { AuditListQuery, AuditRowDto, StatusChangeResult, TenantDetail, TenantListQuery, TenantNote, TenantRow } from "../contract/admin-api.js"
 import type { AdminRole } from "../domain/admin-permissions.js"
+import type { TenantStatusAction } from "../domain/tenant-admin.js"
 
 // Admin data access. Two implementations behind this interface, like the shop Repo:
 // pg-admin.ts (admin_app role -> admin_* SECURITY DEFINER functions only) and memory-admin.ts (tests).
@@ -89,6 +91,21 @@ export interface AdminRepo {
   stepUpSession(sessionId: string, seconds: number): Promise<string | null>
 
   appendAudit(entry: AuditEntry): Promise<number>
+
+  // ---- tenants (A1). Metadata and aggregates only; the SQL functions behind these never return payloads, customers, sales,
+  // cost prices or password hashes, and phones come back masked except from revealPhones.
+  listTenants(q: TenantListQuery): Promise<{ tenants: TenantRow[]; total: number; nextCursor: string | null }>
+  getTenant(storeId: string): Promise<TenantDetail | null>
+  /** full phone numbers (owner and staff); null if no such tenant. The caller MUST audit the reveal. */
+  revealPhones(storeId: string): Promise<Array<{ name: string; role: "owner" | "staff"; phone: string }> | null>
+  /** Atomic (row-locked) status change that also records the owner-visible activity row. not_found if no such tenant; invalid_transition (409) if the current status does not allow it. */
+  changeTenantStatus(input: { storeId: string; action: TenantStatusAction; adminId: string; reason: string; message: string | null }): Promise<StatusChangeResult>
+  /** newest first; null if no such tenant */
+  listNotes(storeId: string): Promise<TenantNote[] | null>
+  addNote(storeId: string, adminId: string, body: string, tags: string[]): Promise<TenantNote | null>
+  /** newest first; cursor = the last id of the previous page */
+  listAudit(q: AuditListQuery): Promise<{ rows: AuditRowDto[]; nextCursor: string | null }>
+
   /** bucket is namespaced "admin:" inside the repo so shop attempts can never lock admins out (§17.8) */
   throttle(bucket: string, max: number, windowSeconds: number): Promise<boolean>
   throttleReset(bucket: string): Promise<void>

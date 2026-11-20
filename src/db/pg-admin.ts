@@ -1,6 +1,9 @@
 import postgres from "postgres"
 import { DomainError } from "../domain/errors.js"
+import type { AuditRowDto, TenantDetail, TenantNote, TenantRow } from "../contract/admin-api.js"
+import { decodeAuditCursor, decodeOffsetCursor, encodeOffsetCursor } from "../domain/tenant-admin.js"
 import type { AdminRecord, AdminRepo, AdminSession, AdminSummary, AuditEntry } from "./admin.js"
+import type { StoreKind, StoreStatus } from "./types.js"
 
 // PostgreSQL AdminRepo. Connects as the `admin_app` role, which has NO table grants:
 // every call below is an admin_* SECURITY DEFINER function (db/migrations/012). Never connect as `postgres` or `pos_app`.
@@ -36,8 +39,34 @@ function mapError(err: unknown): unknown {
   if (e?.code === "P0001" && e.message === "last_super_admin") {
     return new DomainError("last_super_admin", "শেষ সুপার অ্যাডমিনকে সরানো বা নামানো যাবে না")
   }
+  if (e?.code === "P0001" && e.message === "tenant_not_found") return new DomainError("not_found", "Tenant not found.")
+  if (e?.code === "P0001" && e.message === "invalid_transition") {
+    return new DomainError("invalid_transition", "That change is not allowed in the tenant's current status.")
+  }
   return err
 }
+
+interface TenantListRow {
+  id: string
+  name: string
+  kind: StoreKind
+  owner_name: string | null
+  owner_phone_masked: string | null
+  created_at: Date
+  status: StoreStatus
+  grandfathered: boolean
+  trial_ends_at: Date | null
+  last_sync_at: Date | null
+  device_count: number
+  staff_count: number
+}
+const toTenantRow = (r: TenantListRow): TenantRow => ({
+  id: r.id, name: r.name, kind: r.kind, ownerName: r.owner_name, ownerPhoneMasked: r.owner_phone_masked, createdAt: iso(r.created_at) as string,
+  status: r.status, grandfathered: r.grandfathered, trialEndsAt: iso(r.trial_ends_at), lastSyncAt: iso(r.last_sync_at),
+  deviceCount: r.device_count, staffCount: r.staff_count,
+})
+interface NoteRow { id: string; at: Date; admin_name: string | null; body: string; tags: string[] }
+const toNote = (r: NoteRow): TenantNote => ({ id: Number(r.id), at: iso(r.at) as string, adminName: r.admin_name, body: r.body, tags: r.tags })
 
 export function createPgAdmin(opts: { connectionString: string; max?: number }): AdminRepo {
   const sql = postgres(opts.connectionString, { prepare: false, max: opts.max ?? 3, idle_timeout: 20, connect_timeout: 10 })
@@ -128,6 +157,83 @@ export function createPgAdmin(opts: { connectionString: string; max?: number }):
           ${e.ip ?? null}, ${e.ua ?? null}, ${e.outcome}, ${e.requestId ?? null}) AS id`)
       return Number(rows[0]!.id)
     },
+    // ---- tenants (A1): every call is one admin_* SECURITY DEFINER function (db/migrations/013)
+    async listTenants(q) {
+      const offset = decodeOffsetCursor(q.cursor)
+      const rows = await run(sql<Array<TenantListRow & { total: string }>>`
+        SELECT * FROM admin_tenant_list(${q.q ?? null}, ${q.status ?? null}, ${q.kind ?? null}, ${q.noSyncDays ?? null}, ${q.sort}, ${q.dir}, ${q.limit}, ${offset})`)
+      const total = rows[0] ? Number(rows[0].total) : 0
+      return { tenants: rows.map(toTenantRow), total, nextCursor: offset + q.limit < total ? encodeOffsetCursor(offset + q.limit) : null }
+    },
+    async getTenant(storeId): Promise<TenantDetail | null> {
+      const head = await run(sql<Array<TenantListRow & {
+        address: string | null; read_only_since: Date | null; status_message: string | null; status_changed_at: Date; last_event_at: Date | null
+      }>>`SELECT * FROM admin_tenant_get(${storeId})`)
+      const h = head[0]
+      if (!h) return null
+      const [staff, devices, history, errors] = await Promise.all([
+        run(sql<Array<{ name: string; phone_masked: string; role: "owner" | "staff"; active: boolean; created_at: Date }>>`SELECT * FROM admin_tenant_staff(${storeId})`),
+        run(sql<Array<{ code: string; created_at: Date }>>`SELECT * FROM admin_tenant_devices(${storeId})`),
+        run(sql<Array<{ at: Date; from_status: StoreStatus; to_status: StoreStatus; admin_name: string | null; reason: string; message: string | null }>>`SELECT * FROM admin_tenant_status_history(${storeId})`),
+        run(sql<Array<{ fingerprint: string; kind: string; message: string; count: number; last_at: Date; app_version: string | null }>>`SELECT * FROM admin_tenant_errors(${storeId})`),
+      ])
+      return {
+        tenant: { ...toTenantRow(h), address: h.address, statusMessage: h.status_message, statusChangedAt: iso(h.status_changed_at) as string, readOnlySince: iso(h.read_only_since), lastEventAt: iso(h.last_event_at) },
+        staff: staff.map((s) => ({ name: s.name, phoneMasked: s.phone_masked, role: s.role, active: s.active, createdAt: iso(s.created_at) as string })),
+        devices: devices.map((d) => ({ code: d.code, createdAt: iso(d.created_at) as string })),
+        statusHistory: history.map((e) => ({ at: iso(e.at) as string, fromStatus: e.from_status, toStatus: e.to_status, adminName: e.admin_name, reason: e.reason, message: e.message })),
+        recentErrors: errors.map((e) => ({ fingerprint: e.fingerprint, kind: e.kind, message: e.message, count: e.count, lastAt: iso(e.last_at) as string, appVersion: e.app_version })),
+      }
+    },
+    async revealPhones(storeId) {
+      try {
+        return await run(sql<Array<{ name: string; role: "owner" | "staff"; phone: string }>>`SELECT * FROM admin_tenant_phones(${storeId})`)
+      } catch (err) {
+        if (err instanceof DomainError && err.code === "not_found") return null
+        throw err
+      }
+    },
+    async changeTenantStatus({ storeId, action, adminId, reason, message }) {
+      const rows = await run(sql<Array<{ from_status: StoreStatus; to_status: StoreStatus; changed_at: Date }>>`
+        SELECT * FROM admin_tenant_set_status(${storeId}, ${action}, ${adminId}, ${reason}, ${message})`)
+      const r = rows[0]!
+      return { fromStatus: r.from_status, toStatus: r.to_status, changedAt: iso(r.changed_at) as string }
+    },
+    async listNotes(storeId) {
+      try {
+        return (await run(sql<NoteRow[]>`SELECT * FROM admin_tenant_notes(${storeId})`)).map(toNote)
+      } catch (err) {
+        if (err instanceof DomainError && err.code === "not_found") return null
+        throw err
+      }
+    },
+    async addNote(storeId, adminId, body, tags) {
+      try {
+        const rows = await run(sql<NoteRow[]>`SELECT * FROM admin_tenant_note_add(${storeId}, ${adminId}, ${body}, ${tags}::text[])`)
+        return toNote(rows[0]!)
+      } catch (err) {
+        if (err instanceof DomainError && err.code === "not_found") return null
+        throw err
+      }
+    },
+    async listAudit(q) {
+      const before = decodeAuditCursor(q.cursor)
+      const rows = await run(sql<Array<{
+        id: string; at: Date; admin_id: string | null; admin_name: string | null; actor: string; action: string; outcome: AuditRowDto["outcome"]
+        target_type: string | null; target_id: string | null; store_id: string | null; reason: string | null; before: unknown; after: unknown; ip: string | null; request_id: string | null
+      }>>`
+        SELECT * FROM admin_audit_list(${q.action ?? null}, ${q.outcome ?? null}, ${q.adminId ?? null}, ${q.storeId ?? null}, ${q.from ?? null}, ${q.to ?? null}, ${before}, ${q.limit + 1})`)
+      const page = rows.slice(0, q.limit)
+      return {
+        rows: page.map((r): AuditRowDto => ({
+          id: Number(r.id), at: iso(r.at) as string, adminId: r.admin_id, adminName: r.admin_name, actor: r.actor, action: r.action, outcome: r.outcome,
+          targetType: r.target_type, targetId: r.target_id, storeId: r.store_id, reason: r.reason, before: r.before ?? null, after: r.after ?? null,
+          ip: r.ip, requestId: r.request_id,
+        })),
+        nextCursor: rows.length > q.limit ? String(page[page.length - 1]!.id) : null,
+      }
+    },
+
     async throttle(bucket, max, windowSeconds) {
       const rows = await run(sql<Array<{ ok: boolean }>>`SELECT admin_throttle(${bucket}, ${max}, ${windowSeconds}) AS ok`)
       return rows[0]!.ok

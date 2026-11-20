@@ -68,7 +68,13 @@ async function withinAnonAuditBudget(ctx: AdminCtx): Promise<boolean> {
 
 async function parseBody(req: Request, contract: RouteContract): Promise<unknown> {
   let raw: unknown = {}
-  if (contract.method !== "GET") {
+  if (contract.method === "GET") {
+    // GET inputs are the query string, validated by the same contract schema (a repeated key keeps its first value)
+    const q: Record<string, string> = {}
+    // blank values (a filter form that serialises empty fields) and cache-busting params are ignored, not errors
+    for (const [k, v] of new URL(req.url).searchParams) if (v !== "" && !Object.hasOwn(q, k)) q[k] = v
+    raw = q
+  } else {
     const text = await req.text()
     if (text.length > MAX_BODY) throw new DomainError("payload_too_large", "Request is too large.")
     try {
@@ -109,8 +115,10 @@ export async function adminRoute(info: AdminRequestInfo): Promise<Result> {
       adminId: session?.adminId ?? null,
       actor: "admin",
       action: contract.audit as string,
-      targetType: params.id ? "admin" : null,
+      // a denied or failed attempt still records WHAT it was aimed at (acceptance 1: a Support suspend names the tenant)
+      targetType: params.id ? (contract.target ?? "admin") : null,
       targetId: params.id ?? null,
+      ...(contract.target === "tenant" && params.id ? { storeId: params.id } : {}),
       ...extra,
       ...(extra.adminId !== undefined ? { adminId: extra.adminId } : {}),
       ip: ctx.ip,
@@ -135,7 +143,12 @@ export async function adminRoute(info: AdminRequestInfo): Promise<Result> {
     const result = await (adminHandlers[id] as any)({ ctx, body, params, session })
     extra = result.audit ?? {}
     applied = true
-    await audit("ok") // a failed audit write fails the request loudly: an unaudited admin action must not look successful
+    // a failed audit write fails the request loudly: an unaudited admin action must not look successful. One retry first: the usual cause is a pool blip.
+    try {
+      await audit("ok")
+    } catch {
+      await audit("ok")
+    }
     return { status: contract.status, body: result.body }
   } catch (err) {
     if (applied) {

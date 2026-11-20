@@ -44,14 +44,111 @@ export interface RouteContract {
   mutating: boolean
   /** audit action name; required when mutating */
   audit: string | null
+  /** what `:id` refers to; drives the default audit target, so a denied attempt on a tenant still records which tenant */
+  target?: "admin" | "tenant"
   /** success status code */
   status: number
   request: z.ZodType
   response: z.ZodType
 }
 
-const SessionResponse = (extra: z.ZodRawShape = {}) =>
-  z.object({ token: z.string(), admin: AdminSummarySchema, expiresInSeconds: z.number().int().positive(), ...extra })
+// generic so the extra fields (recoveryCodes on enrol-confirm) keep their type for the UI client
+const SessionResponse = <T extends z.ZodRawShape = Record<never, never>>(extra?: T) =>
+  z.object({ token: z.string(), admin: AdminSummarySchema, expiresInSeconds: z.number().int().positive(), ...(extra ?? ({} as T)) })
+
+// ---------------------------------------------------------------- tenants (A1)
+// Metadata and aggregates only (PRD §6): never event payloads, customers, sales, cost prices or password hashes.
+// Phones are masked everywhere except the audited reveal-phone route.
+export const StoreStatusSchema = z.enum(["trial", "active", "grace", "read_only", "suspended", "pending_deletion", "deleted", "cancelled"])
+export const StoreKindSchema = z.enum(["pharmacy", "cosmetics", "other"])
+
+export const TenantRowSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  kind: StoreKindSchema,
+  ownerName: z.string().nullable(),
+  ownerPhoneMasked: z.string().nullable(),
+  createdAt: z.string(),
+  status: StoreStatusSchema,
+  grandfathered: z.boolean(),
+  trialEndsAt: z.string().nullable(),
+  lastSyncAt: z.string().nullable(),
+  deviceCount: z.number().int().nonnegative(),
+  staffCount: z.number().int().nonnegative(),
+})
+export type TenantRow = z.infer<typeof TenantRowSchema>
+
+export const TenantListQuerySchema = z.object({
+  q: z.string().trim().min(1).max(100).optional(),
+  status: StoreStatusSchema.optional(),
+  kind: StoreKindSchema.optional(),
+  /** "not synced for N days": a store that never synced counts as stale */
+  noSyncDays: z.coerce.number().int().min(1).max(3650).optional(),
+  sort: z.enum(["created", "name", "lastSync", "status"]).default("created"),
+  dir: z.enum(["asc", "desc"]).default("desc"),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  /** opaque; produced by the previous page */
+  cursor: z.string().max(200).optional(),
+})
+export type TenantListQuery = z.infer<typeof TenantListQuerySchema>
+
+export const TenantDetailSchema = z.object({
+  tenant: TenantRowSchema.extend({
+    address: z.string().nullable(),
+    statusMessage: z.string().nullable(),
+    statusChangedAt: z.string(),
+    readOnlySince: z.string().nullable(),
+    lastEventAt: z.string().nullable(),
+  }),
+  staff: z.array(z.object({ name: z.string(), phoneMasked: z.string(), role: z.enum(["owner", "staff"]), active: z.boolean(), createdAt: z.string() })),
+  devices: z.array(z.object({ code: z.string(), createdAt: z.string() })),
+  statusHistory: z.array(
+    z.object({ at: z.string(), fromStatus: StoreStatusSchema, toStatus: StoreStatusSchema, adminName: z.string().nullable(), reason: z.string(), message: z.string().nullable() }),
+  ),
+  recentErrors: z.array(z.object({ fingerprint: z.string(), kind: z.string(), message: z.string(), count: z.number().int(), lastAt: z.string(), appVersion: z.string().nullable() })),
+})
+export type TenantDetail = z.infer<typeof TenantDetailSchema>
+
+const StatusReason = z.string().trim().min(3).max(1000)
+// shown to the shop owner (Bangla) in the app banner; optional, the shop app falls back to its standard text
+const OwnerMessage = z.string().trim().min(1).max(500).optional()
+export const StatusChangeResultSchema = z.object({ fromStatus: StoreStatusSchema, toStatus: StoreStatusSchema, changedAt: z.string() })
+export type StatusChangeResult = z.infer<typeof StatusChangeResultSchema>
+
+export const TenantNoteSchema = z.object({ id: z.number().int(), at: z.string(), adminName: z.string().nullable(), body: z.string(), tags: z.array(z.string()) })
+export type TenantNote = z.infer<typeof TenantNoteSchema>
+
+export const AuditRowSchema = z.object({
+  id: z.number().int(),
+  at: z.string(),
+  adminId: z.uuid().nullable(),
+  adminName: z.string().nullable(),
+  actor: z.string(),
+  action: z.string(),
+  outcome: z.enum(["ok", "denied", "error", "started"]),
+  targetType: z.string().nullable(),
+  targetId: z.string().nullable(),
+  storeId: z.uuid().nullable(),
+  reason: z.string().nullable(),
+  before: z.unknown().nullable(),
+  after: z.unknown().nullable(),
+  ip: z.string().nullable(),
+  requestId: z.string().nullable(),
+})
+export type AuditRowDto = z.infer<typeof AuditRowSchema>
+
+export const AuditListQuerySchema = z.object({
+  action: z.string().trim().min(1).max(80).optional(),
+  outcome: z.enum(["ok", "denied", "error", "started"]).optional(),
+  adminId: z.uuid().optional(),
+  storeId: z.uuid().optional(),
+  from: z.iso.datetime().optional(),
+  to: z.iso.datetime().optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  /** opaque; produced by the previous page */
+  cursor: z.string().max(40).optional(),
+})
+export type AuditListQuery = z.infer<typeof AuditListQuerySchema>
 
 export const adminContract = {
   "auth.login": {
@@ -118,6 +215,55 @@ export const adminContract = {
     method: "POST", path: "/admins/:id/reset-password", auth: "session", action: "admins.resetPassword", mutating: true, audit: "admin.reset_password", status: 200,
     request: z.object({ password: z.string().min(12).max(128), reason: Reason }),
     response: z.object({ ok: z.literal(true) }),
+  },
+  // ---- tenants and audit viewer (A1)
+  "tenants.list": {
+    method: "GET", path: "/tenants", auth: "session", action: "tenant.read", mutating: false, audit: null, status: 200,
+    request: TenantListQuerySchema,
+    response: z.object({ tenants: z.array(TenantRowSchema), total: z.number().int().nonnegative(), nextCursor: z.string().nullable() }),
+  },
+  "tenants.get": {
+    method: "GET", path: "/tenants/:id", auth: "session", action: "tenant.read", target: "tenant", mutating: false, audit: null, status: 200,
+    request: Empty,
+    response: TenantDetailSchema,
+  },
+  "tenants.revealPhone": {
+    method: "POST", path: "/tenants/:id/reveal-phone", auth: "session", action: "tenant.reveal_phone", target: "tenant", mutating: true, audit: "admin.tenant.reveal_phone", status: 200,
+    request: z.object({ reason: StatusReason }),
+    response: z.object({ phones: z.array(z.object({ name: z.string(), role: z.enum(["owner", "staff"]), phone: z.string() })) }),
+  },
+  "tenants.suspend": {
+    method: "POST", path: "/tenants/:id/suspend", auth: "session", action: "tenant.suspend", target: "tenant", mutating: true, audit: "admin.tenant.suspend", status: 200,
+    request: z.object({ reason: StatusReason, message: OwnerMessage }),
+    response: StatusChangeResultSchema,
+  },
+  "tenants.readOnly": {
+    method: "POST", path: "/tenants/:id/read-only", auth: "session", action: "tenant.suspend", target: "tenant", mutating: true, audit: "admin.tenant.read_only", status: 200,
+    request: z.object({ reason: StatusReason, message: OwnerMessage }),
+    response: StatusChangeResultSchema,
+  },
+  "tenants.reactivate": {
+    method: "POST", path: "/tenants/:id/reactivate", auth: "session", action: "tenant.suspend", target: "tenant", mutating: true, audit: "admin.tenant.reactivate", status: 200,
+    request: z.object({ reason: StatusReason }),
+    response: StatusChangeResultSchema,
+  },
+  "tenants.notes.list": {
+    method: "GET", path: "/tenants/:id/notes", auth: "session", action: "tenant.read", target: "tenant", mutating: false, audit: null, status: 200,
+    request: Empty,
+    response: z.object({ notes: z.array(TenantNoteSchema) }),
+  },
+  "tenants.notes.add": {
+    method: "POST", path: "/tenants/:id/notes", auth: "session", action: "tenant.notes.write", target: "tenant", mutating: true, audit: "admin.tenant.note_add", status: 201,
+    request: z.object({
+      body: z.string().trim().min(1).max(2000),
+      tags: z.array(z.string().trim().toLowerCase().min(1).max(30).regex(/^[a-z0-9][a-z0-9 _-]*$/, "tag")).max(10).default([]),
+    }),
+    response: z.object({ note: TenantNoteSchema }),
+  },
+  "audit.list": {
+    method: "GET", path: "/audit", auth: "session", action: "audit.read", mutating: false, audit: null, status: 200,
+    request: AuditListQuerySchema,
+    response: z.object({ rows: z.array(AuditRowSchema), nextCursor: z.string().nullable() }),
   },
 } as const satisfies Record<string, RouteContract>
 

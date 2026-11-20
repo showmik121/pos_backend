@@ -31,6 +31,7 @@ const STATUS: Record<string, number> = {
   invalid_code: 401,
   email_taken: 409,
   last_super_admin: 409,
+  invalid_transition: 409,
   already_enrolled: 409,
   not_found: 404,
   phone_taken: 409,
@@ -295,6 +296,12 @@ export function createApp(opts: AppOptions): App {
       const user = await authenticate(req, { allowRestricted: true })
       const store = await repo.getStore(user.storeId)
       return { status: 200, body: { user, store } }
+    }
+
+    // অ্যাকাউন্টে অপারেটর কী করেছে (সাসপেন্ড/রিড-অনলি/চালু)। সাসপেন্ড অবস্থাতেও চলে, যাতে মালিক কারণ দেখতে পান; ভেতরের কারণ কখনো নয়
+    if (key === "GET /v1/account-activity") {
+      const user = await authenticate(req, { allowRestricted: true })
+      return { status: 200, body: { activity: await repo.listAccountActivity(user.storeId) } }
     }
 
     // দোকানের নাম বদল (শুধু মালিক)

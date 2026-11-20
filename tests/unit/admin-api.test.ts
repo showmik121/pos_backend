@@ -399,11 +399,25 @@ describe("permissions, step-up and the audit trail (acceptance 1, 9)", () => {
     const confirm = await h.call("POST", "/v1/admin/auth/2fa/enroll-confirm", { token: l2.json.pendingToken, body: { code: h.codeNow(start.json.secret) } })
     const me = await h.call("GET", "/v1/admin/me", { token })
     const list = await h.call("GET", "/v1/admin/admins", { token })
+    // A1 tenant routes: a tenant in the directory, every route exercised successfully (super, with step-up)
+    const tid = h.adminRepo.seedTenant({ name: "Test Shop", ownerPhone: "01711000099", status: "active" })
+    const tp = (p: string) => `/v1/admin/tenants/${tid}${p}`
+    const tList = await h.call("GET", "/v1/admin/tenants", { token })
+    const tGet = await h.call("GET", tp(""), { token })
+    const reveal = await h.call("POST", tp("/reveal-phone"), { token, body: { reason: "support call" } })
+    const noteAdd = await h.call("POST", tp("/notes"), { token, body: { body: "hello" } })
+    const noteList = await h.call("GET", tp("/notes"), { token })
+    const readOnly = await h.call("POST", tp("/read-only"), { token, body: { reason: "overdue" } })
+    const reactivate = await h.call("POST", tp("/reactivate"), { token, body: { reason: "paid" } })
+    const suspend = await h.call("POST", tp("/suspend"), { token, body: { reason: "abuse" } })
+    const auditList = await h.call("GET", "/v1/admin/audit", { token })
     const out = await h.call("POST", "/v1/admin/auth/logout", { token, body: {} })
 
     const byId: Record<string, { status: number; json: unknown }> = {
       "auth.login": login, "auth.2fa": full, "auth.enroll-start": start, "auth.enroll-confirm": confirm, "auth.step-up": { status: 200, json: { stepUpUntil: new Date(h.now() + 1).toISOString() } },
       "auth.logout": out, me, "admins.list": list, "admins.create": created, "admins.update": patched, "admins.reset2fa": reset, "admins.resetPassword": resetPw,
+      "tenants.list": tList, "tenants.get": tGet, "tenants.revealPhone": reveal, "tenants.suspend": suspend, "tenants.readOnly": readOnly, "tenants.reactivate": reactivate,
+      "tenants.notes.list": noteList, "tenants.notes.add": noteAdd, "audit.list": auditList,
     }
     for (const id of ADMIN_ROUTE_IDS) {
       const c = adminContract[id]
@@ -445,9 +459,20 @@ describe("permissions, step-up and the audit trail (acceptance 1, 9)", () => {
     let first = true
     h.adminRepo.appendAudit = async (e) => { if (first) { first = false; throw new Error("blip") } return real(e) }
     const before = h.adminRepo.auditRows().length
+    // one blip is retried and the action is still audited as ok
+    const r = await h.call("POST", "/v1/admin/auth/logout", { token, body: {} })
+    expect(r.status).toBe(200)
+    expect(h.adminRepo.auditRows().slice(before).map((x) => x.outcome)).toEqual(["ok"])
+  })
+
+  it("a persistent audit failure AFTER a committed action returns 500 and never writes a false 'error' row", async () => {
+    const h = harness()
+    const token = await h.signIn(await h.seed("super", "root@bipone.test"))
+    h.adminRepo.appendAudit = async () => { throw new Error("down") }
+    const rows = h.adminRepo.auditRows().length
     const r = await h.call("POST", "/v1/admin/auth/logout", { token, body: {} })
     expect(r.status).toBe(500)
-    expect(h.adminRepo.auditRows().slice(before).filter((x) => x.outcome === "error")).toEqual([])
+    expect(h.adminRepo.auditRows().slice(rows).filter((x) => x.outcome === "error")).toEqual([])
   })
 
   it("no response or audit row ever contains a password hash, TOTP secret, envelope or recovery hash", async () => {

@@ -89,6 +89,7 @@ describe.skipIf(!SUPER || !APP || !ADMIN)("migration 012: status columns", () =>
       // (it is exercised in the staging rehearsal). Everything database-local is rolled back for real.
       const down = (await read("db", "rollback", "012_down.sql")).replace(/^DROP ROLE IF EXISTS admin_app;$/m, "")
       expect(down).not.toContain("DROP ROLE IF EXISTS admin_app;")
+      await db.unsafe(await read("db", "rollback", "013_down.sql")) // newest first: 013 depends on 012 (docs/RUNBOOK.md)
       await db.unsafe(down)
 
       const cols = await db`SELECT column_name FROM information_schema.columns WHERE table_name = 'stores' AND column_name IN ('status','grandfathered','trial_ends_at')`

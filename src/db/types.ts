@@ -22,6 +22,14 @@ export interface UserWithHash extends PublicUser {
 // Billing / enforcement state (PRD §8.2, migration 012). The shop API enforces it on every request (server/app.ts).
 export type StoreStatus = "trial" | "active" | "grace" | "read_only" | "suspended" | "pending_deletion" | "deleted" | "cancelled"
 
+/** One entry of the owner-visible account history (a status change an operator made). The internal reason is never part of it. */
+export interface AccountActivity {
+  at: string
+  status: StoreStatus
+  /** the message the operator chose to show the owner (Bangla), or null */
+  message: string | null
+}
+
 export interface Store {
   id: string
   name: string
@@ -80,6 +88,8 @@ export interface Repo extends CatalogRepo, StockRepo, DuesRepo, SalesRepo {
 
   getUser(storeId: string, userId: string): Promise<AuthUser | null>
   getStore(storeId: string): Promise<Store | null>
+  /** দোকানের নিজের অ্যাকাউন্ট-ইতিহাস (সাসপেন্ড/রিড-অনলি/চালু), নতুন আগে, সর্বোচ্চ ২০টি; ভেতরের কারণ কখনো নয় */
+  listAccountActivity(storeId: string): Promise<AccountActivity[]>
   /** দোকানের নাম বদলায় (শুধু name); দোকান না পেলে null */
   renameStore(storeId: string, name: string): Promise<Store | null>
   createStaff(storeId: string, input: { name: string; phone: string; passwordHash: string }): Promise<PublicUser>

@@ -6,7 +6,7 @@ import { createPgProjection } from "./pg-projection.js"
 import { createPgSales } from "./pg-sales.js"
 import { createPgStock } from "./pg-stock.js"
 import type { ProjectionRepo } from "./projection.js"
-import type { AuthUser, NewSyncEvent, PublicUser, Repo, Store, StoreStatus, SyncEvent, UserWithHash } from "./types.js"
+import type { AccountActivity, AuthUser, NewSyncEvent, PublicUser, Repo, Store, StoreStatus, SyncEvent, UserWithHash } from "./types.js"
 
 // PostgreSQL (Supabase) রিপোজিটরি।
 // - Supabase এর Transaction pooler (পোর্ট 6543) এর জন্য prepare:false লাগে।
@@ -94,6 +94,14 @@ export function createPgRepo(opts: { connectionString: string; max?: number }): 
         return rows[0] ? toStore(rows[0]) : null
       }),
 
+    // the owner-visible history only: the column grant on tenant_status_events leaves out the internal reason, RLS limits it to this store
+    listAccountActivity: (storeId) =>
+      withStore(storeId, async (tx) => {
+        const rows = await tx<Array<{ at: Date; to_status: StoreStatus; message: string | null }>>`
+          SELECT at, to_status, message FROM tenant_status_events ORDER BY id DESC LIMIT 20`
+        return rows.map((r): AccountActivity => ({ at: r.at.toISOString(), status: r.to_status, message: r.message }))
+      }),
+
     renameStore: (storeId, name) =>
       withStore(storeId, async (tx) => {
         const rows = await tx<StoreRow[]>`
@@ -166,6 +174,7 @@ export function createPgRepo(opts: { connectionString: string; max?: number }): 
         await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`push:${storeId}`}, 0))`
         const dev = await tx<{ code: string }[]>`SELECT code FROM sync_devices WHERE device_id = ${deviceId}`
         if (!dev[0]) throw new DomainError("device_unregistered", "এই ডিভাইস নিবন্ধিত নয়")
+        await tx`SELECT sync_touch_store()` // "last sync" for the admin panel; a no-op unless the last touch is 5+ minutes old
         for (const e of events) {
           await tx`
             INSERT INTO sync_events (store_id, id, device_code, user_id, kind, client_at, payload)
@@ -177,6 +186,7 @@ export function createPgRepo(opts: { connectionString: string; max?: number }): 
 
     pullEvents: (storeId, after, limit) =>
       withStore(storeId, async (tx) => {
+        await tx`SELECT sync_touch_store()`
         const rows = await tx<{ seq: string; id: string; kind: string; client_at: Date; device_code: string; user_id: string; payload: Record<string, unknown> }[]>`
           SELECT seq, id, kind, client_at, device_code, user_id, payload
           FROM sync_events WHERE seq > ${after} ORDER BY seq LIMIT ${limit + 1}`
