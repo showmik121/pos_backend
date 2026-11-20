@@ -1,0 +1,64 @@
+# run 3 2026-11-20T14:34:22+06:00
+$ npm run test:e2e
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\sale-flow.e2e.ts-লগআউটে-ফো-c70fd-টোরেজে-দোকানের-ডেটা-থাকে-না-mobile\error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\sale-flow.e2e.ts-লগআউটে-ফো-c70fd-টোরেজে-দোকানের-ডেটা-থাকে-না-mobile\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\sale-flow.e2e.ts-লগআউটে-ফো-c70fd-টোরেজে-দোকানের-ডেটা-থাকে-না-mobile\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  5) [mobile] › e2e\sale-flow.e2e.ts:242:1 › ক্র্যাশ রিপোর্ট নিজের সার্ভারে যায়: পথ থেকে query কাটা, বার্তা ঠিক 
+
+    Test timeout of 60000ms exceeded.
+
+    Error: page.waitForRequest: Test timeout of 60000ms exceeded.
+
+      243 |   await mockApi(page)
+      244 |   await page.goto("/?secret=1")
+    > 245 |   const sent = page.waitForRequest((r) => r.url().endsWith("/v1/client-errors") && r.method() === "POST")
+          |                     ^
+      246 |   const answered = page.waitForResponse((r) => r.url().endsWith("/v1/client-errors"))
+      247 |   await page.evaluate(() => {
+      248 |     setTimeout(() => {
+        at C:\Users\Md Zahidul Islam\AppData\Local\Temp\claude\60cb05d7dbc4cace\2f17d7b1-dd5a-4f27-aea9-85d30a7af885\scratchpad\clones\pos_fontend-142815\e2e\sale-flow.e2e.ts:245:21
+
+    Error: page.waitForResponse: Test timeout of 60000ms exceeded.
+
+      244 |   await page.goto("/?secret=1")
+      245 |   const sent = page.waitForRequest((r) => r.url().endsWith("/v1/client-errors") && r.method() === "POST")
+    > 246 |   const answered = page.waitForResponse((r) => r.url().endsWith("/v1/client-errors"))
+          |                         ^
+      247 |   await page.evaluate(() => {
+      248 |     setTimeout(() => {
+      249 |       throw new Error("e2e-ক্র্যাশ ০১৭১২৩৪৫৬৭৮ 01712345678")
+        at C:\Users\Md Zahidul Islam\AppData\Local\Temp\claude\60cb05d7dbc4cace\2f17d7b1-dd5a-4f27-aea9-85d30a7af885\scratchpad\clones\pos_fontend-142815\e2e\sale-flow.e2e.ts:246:25
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\sale-flow.e2e.ts-ক্র্যাশ-র-e1712--থেকে-query-কাটা-বার্তা-ঠিক-mobile\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\sale-flow.e2e.ts-ক্র্যাশ-র-e1712--থেকে-query-কাটা-বার্তা-ঠিক-mobile\error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\sale-flow.e2e.ts-ক্র্যাশ-র-e1712--থেকে-query-কাটা-বার্তা-ঠিক-mobile\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\sale-flow.e2e.ts-ক্র্যাশ-র-e1712--থেকে-query-কাটা-বার্তা-ঠিক-mobile\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  5 failed
+    [mobile] › e2e\critical-flows.e2e.ts:42:1 › অফলাইনে বিক্রি: বিল হয়, বদল জমে থাকে, নেট এলে একবারই সার্ভারে যায় 
+    [mobile] › e2e\critical-flows.e2e.ts:83:1 › ব্যাকআপ → ফোনের ডেটা মোছা → ব্যাকআপ থেকে ফেরানো; ভুল ফাইল আটকায় 
+    [mobile] › e2e\sale-flow.e2e.ts:59:1 › দোকান খোলা থেকে বাকি আদায় পর্যন্ত ──────────────────────
+    [mobile] › e2e\sale-flow.e2e.ts:206:1 › লগআউটে ফোনের ডেটা মোছা: ব্যাকআপ-নিশ্চিতকরণ ছাড়া মোছা যায় না, মোছার পর স্টোরেজে দোকানের ডেটা থাকে না 
+    [mobile] › e2e\sale-flow.e2e.ts:242:1 › ক্র্যাশ রিপোর্ট নিজের সার্ভারে যায়: পথ থেকে query কাটা, বার্তা ঠিক 
+  1 skipped
+  7 passed (1.5m)
+exit=1
+DONE

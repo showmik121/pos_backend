@@ -1,0 +1,11 @@
+# Phase 2 frontend E2E, fresh clone HEAD fc0bfad 2026-11-20T14:36:57+06:00 node v24.18.0
+# (earlier runs INVALID: Git-Bash rewrote /api to a Windows path at build time - see phase2-e2e-INVALID-*)
+$ NEXT_PUBLIC_API_URL=/api npm run build
+  ├ chunks/4bd1b696-c023c6e3521b1417.js  54.2 kB
+  └ other shared chunks (total)          2.01 kB
+
+
+○  (Static)  prerendered as static content
+
+exit=0
+built-in API base check (must be 0): 0

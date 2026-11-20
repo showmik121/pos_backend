@@ -1,0 +1,11 @@
+# Phase 2 frontend E2E (fresh clone HEAD fc0bfad) 2026-11-20T14:30:45+06:00 node v24.18.0
+$ NEXT_PUBLIC_API_URL=/api npm run build
++ First Load JS shared by all             103 kB
+  ├ chunks/255-0e5ac6cd71b0e266.js       46.7 kB
+  ├ chunks/4bd1b696-c023c6e3521b1417.js  54.2 kB
+  └ other shared chunks (total)          2.01 kB
+
+
+○  (Static)  prerendered as static content
+
+exit=0

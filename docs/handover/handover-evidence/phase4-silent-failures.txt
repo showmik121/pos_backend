@@ -1,0 +1,31 @@
+# Phase 4 - Silent-failure hunt (STATIC, ecc:silent-failure-hunter agent, 2026-11-20)
+Scope read: sale/void/stock/sync/backup/storage paths (frontend src, backend sync/stock repos). Not read: most UI pages, selectors.ts, seed.ts, events.ts, schemas.ts.
+Money arithmetic: clean - integer poisha, only guarded Math.round for % discounts / carton cost (lib/domain/cart.ts). No float-on-money found.
+[VERIFIED] = QA lead re-read the code. Agent line numbers can be a few lines off; the verified locations are given.
+
+## HIGH
+1  [VERIFIED] Sale saved but never queued for sync: components/db-provider.tsx:111-120 `try { eventsFromChange... writeSync } catch { out = next }` - no log, no flag.
+   If event generation throws, the sale/void/stock-in/due payment is saved locally with no outbox event -> never reaches server/other phones; receipt looks normal.
+2  Local save failure is only a banner: db-provider.tsx (setSaveFailed(!saveDb(...))), saveDb returns false on quota error (lib/store/db.ts:56-63). /sell/pay still goes to the receipt.
+   Sale lives only in memory -> lost on reload while cash was taken. The flag clears on the next successful write.
+3  [VERIFIED] Corrupt local DB silently replaced by empty DB: lib/store/db.ts:42-54. JSON.parse failure -> catch -> emptyDb() with NO `.corrupt` copy (the copy is only made for valid-JSON-not-isDb);
+   next saveDb overwrites raw data; bill counter restarts at 1000. Same if getItem throws.
+4  Corrupt sync state -> emptySyncState(): lib/sync/state.ts:110-135 drops unsent outbox/deferred and cursor=0; re-seed does not reconstruct void/due/remove-batch history. Outbox elements not validated.
+5  Pulled events dropped silently: lib/sync/engine.ts:325-332, replay.ts:190-196. Invalid events filtered, applyEvents `catch -> ignore`, cursor advances past them; never counted/shown. Version skew => permanent wrong stock/baki on that phone.
+6  Deferred events can be stuck forever (replay.ts:117,133; engine.ts:332): no age limit/alert/UI.
+7  Restore: components/backup-section.tsx:46-51 ignores saveFailed, shows success; applies as ordinary local change; cursor/outbox untouched; billCounter rolled back -> possible duplicate bill numbers; sales absent from backup are deleted locally with no void events, server keeps them.
+
+## MEDIUM
+8  Device id regenerated each run if device storage write fails (lib/store/device.ts:64-83) -> consumes the 26-code device cap; sync-runner.tsx:30 bare catch hides device_limit/auth errors; bills unprefixed while code null.
+9  runSync exceptions unhandled in sync-runner.tsx:40; `server`/`auth` statuses ignored; stale status shown.
+10 Push drops events on 400/413 permanently (engine.ts:290-310); only a `dropped` count kept; chunk() uses string length while validateEvent uses bytes (Bangla payload mismatch).
+11 Backend pushEvents ON CONFLICT DO NOTHING acks a replayed id with different payload (src/db/pg.ts:144-147); server never validates sale vs stock/batch.
+12 Void restoring stock into removed batches only reported locally; refundPoisha not persisted (actions.ts:595-627, replay.ts:139-143).
+13 Expiry check uses device-local today (fifo.ts, actions.ts) -> wrong phone clock can sell expired stock (== KNOWN B2); replay applySale can drive qtyRemaining negative with no alert (== B7/KNOWN overs-ell).
+14 Ledger idempotency depends on ids; void ledger rewrite `void:<saleId>` can fail to match -> customer balances differ between phones silently.
+15 Cross-tab `storage` handler replaces memory db via loadDb (falls back to empty on failure); two tabs selling at once lose a sale (db-provider.tsx:~95-100).
+
+## LOW
+16 wipe.ts:75-77 partial removeItem failure leaves inconsistent state. 17 api/client.ts:422-427 non-JSON bodies. 18 pos_backend/server/index.ts:68-70 no try/catch around app.fetch.
+19 Backend catch{} drops cause (http.ts:33-37, token.ts:56, cursor.ts:23). 20 Fire-and-forget catches: report/send.ts, providers.tsx:16 (SW registration failure), device-registrar.tsx:23, backup-reminder.ts, browser/persist.ts:14.
+21 backup-section.tsx:22,31-40 `persistent` starts true; denied persistence not shown. 22 sync-runner.tsx:62-65 queue survives only in memory if saveSyncState fails.

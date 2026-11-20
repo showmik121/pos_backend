@@ -1,0 +1,38 @@
+# Phase 3 - Real browser QA (Chrome via DevTools MCP), 2026-11-20
+Stack under test: fresh clone of chore/handover (frontend fc0bfad, backend 43e68a1), frontend static build with NEXT_PUBLIC_API_URL=http://localhost:3001/api,
+REAL backend (npm start) on a LOCAL throwaway embedded Postgres 18.7 (UTF8), migrations 001-006 applied. Nothing touched live. Viewport 375x812 unless stated. Owner and staff used separate browser contexts (= two devices).
+Screenshots: docs/handover-evidence/screens/p3-*.png ; Lighthouse: screens/lighthouse-sell-mobile/report.html
+
+## Journey results (OK = observed working)
+OK   Signup (owner, pharmacy) -> home, Bangla UI, no console error.
+OK   Add product with batch+expiry (cost 100.50, sell 150, stock 10, expiry 12/2027 -> shown 31 Dec 2027).
+OK   Stock-in of a second batch with expiry 01/2020: accepted, labelled "মেয়াদোত্তীর্ণ", excluded from sellable count (total 15, sellable 10).
+OK   Search + sell: cart accepts qty above sellable (13 vs 10) with hint "স্টকে আছে ১০", but "বিল সম্পন্ন করুন" is BLOCKED: "স্টকে মাত্র 10 পিস আছে". Expired pieces cannot be sold.
+OK   Split payment cash 100 + bKash 200.50 on 300 -> change 0.50; receipt A-১০০১ correct. Server event stores integers: total 30000, payments 10000 + 20050, change 50, costPoisha 10050 (integer poisha confirmed).
+OK   Discount 7% bill-level on 150 -> -10.50, total 139.50 (correct rounding).
+OK   Credit/baki: partial 40 cash with no customer -> blocked "বাকি রাখতে কাস্টমার বেছে নিন"; with new customer -> baki 99.50 on ledger; bill A-১০০২.
+OK   Due collection: 200 on 99.50 owed -> blocked; 50.25 accepted -> balance 49.25.
+OK   Void A-১০০২ (owner): reason field, stock +1, ledger reversed (customer balance 0), message "কাস্টমারকে ৳ ৯০.২৫ ফেরত দিন" (=40+50.25, correct).
+OK   Expiry page /stock/expiry lists the expired batch with "সরান"; low-stock filter works (0 at stock 8 vs min 5).
+OK   Offline sale (network Offline): A-১০০৩ completed and saved locally; back online -> exactly 1 sale_completed event on server (idempotent).
+OK   Second device (isolated staff context) converged: same bills, A-১০০২ shown "বাতিল", today's total 450, stock matched.
+OK   1280px: no horizontal overflow (scrollWidth == innerWidth). Lighthouse mobile on /sell: Accessibility 100, Best Practices 100, SEO 100, 47 audits passed / 0 failed.
+OK   Staff: no void button; /reports -> "রিপোর্ট শুধু মালিক দেখতে পারেন।"; /settings/staff -> "এই পাতা শুধু মালিক দেখতে পারেন।".
+
+## DEFECTS FOUND
+D-P3-1  [HIGH/BLOCKER if cost privacy is a contract term] Staff UI shows cost price: /products/detail as staff shows "ক্রয়মূল্য ৳ ১০০.৫০" (screens/p3-375-staff-sees-cost-price.png).
+        Root cause proven at API: staff GET /v1/sync/pull returned events with costPoisha (containsCostPoisha=true) although REST /v1/products hides it. (Same as KNOWN_LIMITATIONS B1 / security H1.)
+D-P3-2  [MEDIUM] Expired stock on hand is invisible on the home "নজর দিন" panel and in the stock-page "মেয়াদ কাছে" count: with a 5-pc batch expired in 2020, home says "এখন সব ঠিক আছে।" and filter shows 0.
+        Cause: lib/store/selectors.ts:84-86 expiringSoonCount() returns only expiryBuckets().within30; the `expired` bucket is never counted. The /stock/expiry page itself does list it.
+D-P3-3  [LOW] ASCII digits inside the Bangla UI: pay page "পণ্যের সংখ্যা 1টি" (and other counts) and the stock error "স্টকে মাত্র 10 পিস আছে". (CLAUDE.md says Bangla digits everywhere.)
+D-P3-4  [MEDIUM] Hold/resume bills is NOT built: /sell has scan, search, cart and "বিল খালি করুন" only; one draft cart. PRD P0 asks for multiple concurrent carts.
+D-P3-5  [LOW] Staff bottom nav still shows "রিপোর্ট" which then says owner-only (works safely, confusing UX).
+D-P3-6  [LOW] Cart lets qty exceed sellable stock (13 vs 10); the block only happens at payment. Hint is shown.
+D-P3-7  [INFO] Stock-in accepts an already-expired expiry date (01/2020) without warning (it is flagged expired afterwards).
+
+## NOT TESTED in this browser run (covered only by automated Playwright mock-API tests, phase2-e2e-run*.txt, or not at all)
+- Backup -> wipe -> restore (automated E2E only; static review found real risks: phase4-silent-failures.txt items 3, 7).
+- Barcode scan, printing/share, CSV import, PWA install, camera.
+- "Click every button" on every screen: NOT done; qa-375 E2E visits 32 pages/sheets automatically (0 overflow/console errors/broken assets, 0 axe violations).
+- Real Android/iOS devices, low-end phone performance, thermal printer.
+- Firefox/Safari.
