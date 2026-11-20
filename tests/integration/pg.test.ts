@@ -201,9 +201,8 @@ describe.skipIf(!URL_)("PostgreSQL: আসল ডাটাবেসে", () => {
       await tx`INSERT INTO products (id, store_id, name, sell_price_poisha) VALUES (${pid}, ${a.storeId}, 'পণ্য', 500)`
       await tx`INSERT INTO stock_batches (id, store_id, product_id, batch_no, expiry_date, qty_remaining) VALUES (${bid}, ${a.storeId}, ${pid}, 'B1', '2027-01-31', 10)`
     })
-    await expect(
-      asStore(a.storeId, (tx) => tx`INSERT INTO stock_batches (id, store_id, product_id, batch_no, expiry_date, qty_remaining) VALUES (${crypto.randomUUID()}, ${a.storeId}, ${pid}, 'B1', '2027-01-31', 5)`),
-    ).rejects.toThrow(/stock_batches_merge_uq/)
+    // ০০৯-এ ইউনিক সূচক সরানো হয়েছে (প্রজেক্টর ক্লায়েন্টের নিজস্ব ব্যাচ id রাখে); মেশানো এখন অ্যাপ লকের নিচে করে
+    await asStore(a.storeId, (tx) => tx`INSERT INTO stock_batches (id, store_id, product_id, batch_no, expiry_date, qty_remaining) VALUES (${crypto.randomUUID()}, ${a.storeId}, ${pid}, 'B1', '2027-01-31', 5)`)
     await asStore(a.storeId, async (tx) => {
       await tx`UPDATE stock_batches SET qty_remaining = -3 WHERE id = ${bid}`
       const [row] = await tx`SELECT qty_remaining FROM stock_batches WHERE id = ${bid}`
@@ -404,5 +403,163 @@ describe.skipIf(!URL_)("PostgreSQL: আসল ডাটাবেসে", () => {
     const dues = await call("GET", "/v1/dues", { token: s.owner })
     expect(dues.json.items.map((r: { balancePoisha: number }) => r.balancePoisha)).toEqual([700])
     expect(dues.json.totalDuePoisha).toBe(700)
+  })
+
+  it("বিক্রি API: সমান্তরাল বিক্রিতে স্টক ঋণাত্মক হয় না, একই id একবারই, একই বিল নম্বরে একটিই, দুইবার বাতিলে স্টক একবারই ফেরে", async () => {
+    const s = await shop()
+    const pid = crypto.randomUUID()
+    await call("POST", "/v1/products", { token: s.owner, body: product({ id: pid, name: "প্যারা", pricePoisha: 500, costPoisha: 300 }) })
+    await call("POST", `/v1/products/${pid}/stock-ins`, { token: s.owner, body: rcpt({ qty: 5 }) })
+    const qty = async () => (await call("GET", `/v1/products/${pid}`, { token: s.owner })).json.product.stockQty as number
+    const sale = (no: number, over: Record<string, unknown> = {}) => ({
+      id: crypto.randomUUID(), no, prefix: "A", lines: [{ productId: pid, qty: 1 }], payments: [{ method: "cash", amount: 500 }], ...over,
+    })
+
+    // ৮টি সমান্তরাল ১-পিসের বিক্রি, স্টক ৫: ঠিক ৫টি সফল, বাকিগুলো ৪০৯ insufficient_stock
+    const racing = await Promise.all(Array.from({ length: 8 }, (_, i) => call("POST", "/v1/sales", { token: s.staff, body: sale(2001 + i) })))
+    expect(racing.filter((r) => r.status === 201)).toHaveLength(5)
+    expect(racing.filter((r) => r.status === 409).every((r) => r.json.error.code === "insufficient_stock")).toBe(true)
+    expect(await qty()).toBe(0)
+
+    // একই id সমান্তরালে: একটি ২০১, বাকিগুলো ২০০ (স্টকে ৫ ফিরিয়ে দেখি)
+    await call("POST", `/v1/products/${pid}/stock-ins`, { token: s.owner, body: rcpt({ qty: 10, batchNo: "B2" }) })
+    const same = sale(3001)
+    const echo = await Promise.all(Array.from({ length: 4 }, () => call("POST", "/v1/sales", { token: s.staff, body: same })))
+    expect(echo.map((r) => r.status).sort()).toEqual([200, 200, 200, 201])
+    expect(await qty()).toBe(9)
+    expect((await call("POST", "/v1/sales", { token: s.staff, body: { ...same, lines: [{ productId: pid, qty: 2 }] } })).json.error.code).toBe("id_conflict")
+
+    // একই (উপসর্গ, নম্বর), ভিন্ন id: একটিই টেকে
+    const twins = await Promise.all([call("POST", "/v1/sales", { token: s.staff, body: sale(4001) }), call("POST", "/v1/sales", { token: s.staff, body: sale(4001) })])
+    expect(twins.map((r) => r.status).sort()).toEqual([201, 409])
+    expect(twins.find((r) => r.status === 409)!.json.error.code).toBe("duplicate_bill_no")
+    expect(await qty()).toBe(8)
+
+    // দুইবার সমান্তরাল বাতিল: একটি ২০০, অন্যটি ৪০৯; স্টক একবারই ফেরে
+    const target = echo.find((r) => r.status === 201)!.json.sale.id as string
+    const voids = await Promise.all([1, 2].map(() => call("POST", `/v1/sales/${target}/void`, { token: s.owner, body: { reason: "ভুল" } })))
+    expect(voids.map((r) => r.status).sort()).toEqual([200, 409])
+    expect(await qty()).toBe(9)
+    expect((await call("GET", `/v1/sales/${target}`, { token: s.staff })).json.sale.voided).toMatchObject({ by: "মালিক", reason: "ভুল" })
+  })
+
+  it("বিক্রি API: বাকির বিল খাতায় লেখে ও বাতিলে ফেরায়; অফলাইন বিলে স্টক ঋণাত্মক ও oversold; অন্য দোকানে অদৃশ্য", async () => {
+    const s = await shop()
+    const other = await shop()
+    const pid = crypto.randomUUID()
+    const cid = crypto.randomUUID()
+    await call("POST", "/v1/products", { token: s.owner, body: product({ id: pid, name: "ক্রিম", pricePoisha: 1000, costPoisha: 600 }) })
+    await call("POST", `/v1/products/${pid}/stock-ins`, { token: s.owner, body: rcpt({ qty: 3, batchNo: "C1", costPoisha: 600 }) })
+    await call("POST", "/v1/customers", { token: s.owner, body: { id: cid, name: "রহিম", phone: "" } })
+
+    const due = await call("POST", "/v1/sales", { token: s.staff, body: { id: crypto.randomUUID(), no: 1001, prefix: "A", customerId: cid, lines: [{ productId: pid, qty: 2 }], payments: [{ method: "cash", amount: 500 }] } })
+    expect(due.status).toBe(201)
+    expect(due.json.sale).toMatchObject({ total: 2000, due: 1500, customerName: "রহিম" })
+    expect(due.json.sale.lines[0].allocations[0].costPoisha).toBeNull() // স্টাফের কাছে গোপন
+    expect((await call("GET", `/v1/customers/${cid}`, { token: s.owner })).json.customer.balancePoisha).toBe(1500)
+    const noCustomer = await call("POST", "/v1/sales", { token: s.staff, body: { id: crypto.randomUUID(), no: 1002, prefix: "A", lines: [{ productId: pid, qty: 1 }], payments: [] } })
+    expect([noCustomer.status, noCustomer.json.error.code]).toEqual([400, "customer_required"])
+
+    const off = await call("POST", "/v1/sales", { token: s.staff, body: { id: crypto.randomUUID(), no: 1001, prefix: "B", offline: true, at: "2026-11-01T10:00:00.000Z", lines: [{ productId: pid, qty: 4, unitPrice: 900 }], payments: [{ method: "cash", amount: 3600 }] } })
+    expect(off.status).toBe(201)
+    expect(off.json.sale).toMatchObject({ oversold: true, at: "2026-11-01T10:00:00.000Z", total: 3600 })
+    expect((await call("GET", `/v1/products/${pid}`, { token: s.owner })).json.product.stockQty).toBe(-3)
+
+    const voided = await call("POST", `/v1/sales/${due.json.sale.id}/void`, { token: s.owner, body: { reason: "ভুল বিল" } })
+    expect(voided.json).toMatchObject({ restoredQty: 2, lostQty: 0, refundPoisha: 500 })
+    expect((await call("GET", `/v1/customers/${cid}`, { token: s.owner })).json.customer.balancePoisha).toBe(0)
+    expect((await call("GET", "/v1/sales", { token: s.owner })).json.items.map((x: { no: number }) => x.no)).toEqual([1001, 1001])
+    expect((await call("GET", `/v1/sales/${due.json.sale.id}`, { token: other.owner })).status).toBe(404)
+    expect((await call("GET", "/v1/sales", { token: other.owner })).json.items).toEqual([])
+  })
+
+  describe("প্রজেক্টর: ইভেন্ট → কাঠামোবদ্ধ টেবিল", () => {
+    const U = (n: number) => `71000000-0000-4000-8000-${String(n).padStart(12, "0")}`
+    const T = (m: number) => `2026-11-12T06:${String(m).padStart(2, "0")}:00.000Z`
+    const E = (n: number, kind: string, m: number, payload: Record<string, unknown>) => ({ id: U(n), kind, at: T(m), payload })
+    const prod = { id: U(1), name: "প্যারা", barcodes: [{ code: `89${seed++}`, packSize: 1 }], unit: "strip", cartonSize: 10, costPoisha: 300, pricePoisha: 500, minStock: 5, category: "ওষুধ", open: false, createdAt: T(0) }
+    const cust = { id: U(2), name: "করিম", phone: "", createdAt: T(0) }
+    const stockIn = { batchId: U(10), productId: U(1), batchNo: "B1", expiryDate: "2027-12-31", qty: 10, costPoisha: 300, receivedAt: T(1) }
+    const saleBody = {
+      id: U(50), no: 1001, prefix: "A", at: T(3), cashier: "রুবেল",
+      lines: [{ productId: U(1), name: "প্যারা", qty: 4, unitPrice: 500, discount: 0, allocations: [{ batchId: U(10), batchNo: "B1", qty: 4, costPoisha: 300 }] }],
+      subtotal: 2000, lineDiscount: 0, billDiscount: 0, total: 2000, payments: [{ method: "cash", amount: 1500 }], change: 0, due: 500,
+      customerId: U(2), customerName: "করিম",
+    }
+    const saleLedger = { id: U(61), customerId: U(2), at: T(3), kind: "sale", amount: 500, saleNo: 1001, salePrefix: "A", by: "রুবেল" }
+    const flow = () => [
+      E(100, "product_upserted", 0, { product: prod }),
+      E(101, "customer_upserted", 0, { customer: cust }),
+      E(102, "stock_in", 1, stockIn),
+      E(103, "sale_completed", 3, { sale: saleBody, ledger: saleLedger }),
+    ]
+    const qty = async (storeId: string) => {
+      const r = await asStore(storeId, (tx) => tx`SELECT qty_remaining FROM stock_batches WHERE id = ${U(10)}`)
+      return Number(r[0]?.qty_remaining)
+    }
+
+    it("পূর্ণ প্রবাহ: পণ্য, স্টক, বাকির বিল, আদায়, ব্যাচ সরানো — আর দ্বিতীয়বার দিলে কিছু বদলায় না", async () => {
+      const s = await shop()
+      const evs = [
+        ...flow(),
+        E(104, "due_received", 4, { entry: { id: U(62), customerId: U(2), at: T(4), kind: "payment", amount: 200, saleNo: null, by: "মালিক" } }),
+        E(105, "batch_removed", 5, { removed: { id: U(70), at: T(5), by: "মালিক", batchId: U(10), productId: U(1), productName: "প্যারা", batchNo: "B1", expiryDate: "2027-12-31", qty: 6, costPoisha: 300, reason: "মেয়াদ শেষ" } }),
+      ]
+      const r1 = await repo.projection.project(s.storeId, evs)
+      expect(r1).toEqual({ applied: 6, deferred: 0, ignored: 0, duplicate: 0, failed: 0 })
+      const bill = await call("GET", `/v1/sales/${U(50)}`, { token: s.owner })
+      expect(bill.status).toBe(200)
+      expect(bill.json.sale.total).toBe(2000)
+      expect(bill.json.sale.due).toBe(500)
+      expect(bill.json.sale.cashier).toBe("রুবেল")
+      expect(await qty(s.storeId)).toBe(0)
+      const bal = await asStore(s.storeId, (tx) => tx`SELECT coalesce(sum(amount_poisha),0) AS b FROM due_ledger WHERE customer_id = ${U(2)}`)
+      expect(Number(bal[0]?.b)).toBe(300)
+      const r2 = await repo.projection.project(s.storeId, evs)
+      expect(r2.duplicate).toBe(6)
+      expect(r2.applied).toBe(0)
+      expect(await qty(s.storeId)).toBe(0)
+    })
+
+    it("ক্রম উল্টো হলেও একই ফল: বিক্রি আগে এলে অপেক্ষায় থাকে, পণ্য-স্টক এলে বসে", async () => {
+      const s = await shop()
+      const [p, c, st, sl] = flow() as [ReturnType<typeof E>, ReturnType<typeof E>, ReturnType<typeof E>, ReturnType<typeof E>]
+      // বাস্তবে ইভেন্ট আগে লগে ঢোকে, তারপর প্রজেক্ট হয়; অপেক্ষারতগুলো লগ থেকেই আবার পড়া হয়
+      await asStore(s.storeId, async (tx) => {
+        const [u] = await tx`SELECT id FROM users LIMIT 1`
+        await tx`INSERT INTO sync_devices (store_id, device_id, code) VALUES (${s.storeId}, ${crypto.randomUUID()}, 'A')`
+        await tx`INSERT INTO sync_events (store_id, id, device_code, user_id, kind, client_at, payload) VALUES (${s.storeId}, ${sl.id}, 'A', ${u?.id}, ${sl.kind}, ${sl.at}::timestamptz, ${tx.json(sl.payload as never)})`
+      })
+      const first = await repo.projection.project(s.storeId, [sl])
+      expect(first.deferred).toBe(1)
+      expect((await call("GET", `/v1/sales/${U(50)}`, { token: s.owner })).status).toBe(404)
+      const second = await repo.projection.project(s.storeId, [st, c, p])
+      expect(second.failed).toBe(0)
+      expect((await call("GET", `/v1/sales/${U(50)}`, { token: s.owner })).status).toBe(200)
+      expect(await qty(s.storeId)).toBe(6)
+    })
+
+    it("বাতিল: স্টক ফেরে, বাকি কমে, দ্বিতীয়বার দিলে দ্বিগুণ হয় না", async () => {
+      const s = await shop()
+      const voidEv = E(110, "sale_voided", 6, { saleId: U(50), voided: { at: T(6), by: "মালিক", reason: "ভুল বিল" }, ledger: { id: `void:${U(50)}`, customerId: U(2), at: T(6), kind: "void", amount: 500, saleNo: 1001, salePrefix: "A", by: "মালিক" } })
+      await repo.projection.project(s.storeId, [...flow(), voidEv])
+      expect(await qty(s.storeId)).toBe(10)
+      const bal = await asStore(s.storeId, (tx) => tx`SELECT coalesce(sum(amount_poisha),0) AS b FROM due_ledger WHERE customer_id = ${U(2)}`)
+      expect(Number(bal[0]?.b)).toBe(0)
+      await repo.projection.project(s.storeId, [{ ...voidEv, id: U(111) }])
+      expect(await qty(s.storeId)).toBe(10)
+    })
+
+    it("শেষ-বদল জেতে: পুরনো পণ্য-ইভেন্ট পরে এলেও নাম বদলায় না; খারাপ ইভেন্ট বাকিদের আটকায় না", async () => {
+      const s = await shop()
+      const newer = E(120, "product_upserted", 9, { product: { ...prod, name: "নতুন নাম" } })
+      const older = E(121, "product_upserted", 2, { product: { ...prod, name: "পুরনো নাম" } })
+      const junk = E(122, "product_upserted", 3, { product: { ...prod, unit: "kg" } })
+      const r = await repo.projection.project(s.storeId, [newer, older, junk])
+      expect(r.ignored).toBe(1)
+      expect(r.failed).toBe(0)
+      const row = await asStore(s.storeId, (tx) => tx`SELECT name FROM products WHERE id = ${U(1)}`)
+      expect(row[0]?.name).toBe("নতুন নাম")
+    })
   })
 })

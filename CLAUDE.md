@@ -96,3 +96,18 @@ Node >= 20.12। লকফাইল নেই (`npm install` ব্যবহা�
 - `POST /v1/customers/{id}/opening-balances` `{id, amount}` শুধু মালিক।
 - `GET /v1/customers/{id}/ledger` (নতুন আগে, কার্সর) ও `GET /v1/dues` (বাকি > ০, বেশি বাকি আগে, `totalDuePoisha` পুরো দোকানের)।
 - খাতা `due_ledger`-এ চিহ্নযুক্ত পরিমাণ (বাকি বাড়লে +, কমলে −), kind: sale/opening/payment/void; API-তে `amountPoisha` সবসময় ধনাত্মক। বিলপ্রতি একটিই sale ও একটিই void এন্ট্রি (ইউনিক ইনডেক্স)। মাইগ্রেশন ০০৭ হাতে প্রয়োগের আগে `pg_dump`।
+
+## REST: বিক্রি (sales)
+- `POST /v1/sales` `{id, no, prefix?, customerId?, lines:[{productId, qty, discount?}], billDiscount?:{type:amount|percent, value}, payments:[{method, amount}], offline?, at?}` (স্টাফও পারে): ২০১ / একই বডি ২০০ / ভিন্ন বডিতে ৪০৯ `id_conflict` (বডির sha256 `request_hash`)। একই (উপসর্গ, নম্বর) অন্য id-তে ৪০৯ `duplicate_bill_no`। উত্তরের আকার FE-র `Sale`-এর মতো; ক্রয়মূল্য (`costPoisha`) স্টাফের কাছে `null`।
+- হিসাব `domain/cart.ts` + `domain/fifo.ts` (গোল্ডেন ফিক্সচারে বাঁধা) ও `domain/sales.ts` (`planSale`/`planVoid`, বিশুদ্ধ)। অনলাইন বিলে স্টক কম হলে সবটা ফেরত, ৪০৯ `insufficient_stock`; বাকি রাখতে কাস্টমার বাধ্যতামূলক (`customer_required`)।
+- `offline: true` (ফোনে অফলাইনে হওয়া বিল সার্ভারে আসছে): ক্লায়েন্টের `unitPrice` ও `at` (ভবিষ্যতে ৫ মিনিটের বেশি হলে ৪০০) মানা হয়; স্টকের বেশি হলেও নেওয়া হয় — ঘাটতি এক ব্যাচে চাপে (ব্যাচ ঋণাত্মক), বিল `oversold`, অ্যালোকেশনে `oversoldQty`; পণ্যের কোনো ব্যাচ না থাকলে খালি-নম্বরের নতুন ব্যাচ।
+- `POST /v1/sales/{id}/void` `{reason}` শুধু মালিক: স্টক ফেরে (সরানো ব্যাচের অংশ ফেরে না → `lostQty`), বাকির খাতায় `void` এন্ট্রি (কাস্টমার পরে শোধ করে থাকলে শুধু বাকি-থাকা অংশ), উত্তরে `refundPoisha`; আবার বাতিলে ৪০৯ `already_voided`।
+- `GET /v1/sales?from&to&customerId&limit&cursor` (বিক্রির সময়ে নতুন আগে; বাতিল বিলও থাকে), `GET /v1/sales/{id}`।
+- লাইন `sale_items`, ব্যাচ-ভাগ `sale_allocations` (অপরিবর্তনীয়), পেমেন্ট `payments(seq)`; `sales`-এ শুধু `voided*` কলাম বদলানো যায়। লক-ক্রম (create ও void একই): বিল → পণ্য (id ক্রমে) → ব্যাচ-সারি (পণ্য, id ক্রমে) → কাস্টমার-সারি। মাইগ্রেশন ০০৮ হাতে প্রয়োগের আগে `pg_dump` (ডেটা থাকলে guard থামায়)।
+
+## প্রজেক্টর (ইভেন্ট → টেবিল)
+- `src/domain/projection.ts` (বিশুদ্ধ `toCommand`) ইভেন্টকে যাচাই করে কমান্ডে বদলায়; `src/db/pg-projection.ts` কমান্ড টেবিলে বসায়। `project(storeId, events)` একটি লেনদেনে চলে, advisory lock `proj:<store>`।
+- অবস্থা `projection_events` (applied/deferred/ignored/failed); শেষ-বদল-জেতে ঘড়ি `projection_clocks`। নির্ভরতা না এলে `deferred` থাকে, পরের কলে `sync_events` থেকে আবার পড়া হয়।
+- প্রতি ইভেন্ট সেভপয়েন্টে: একটি ব্যর্থ হলে `failed` লেখা হয়, বাকিরা আটকায় না। একই ইভেন্ট দুবার দিলে `duplicate`।
+- ইভেন্টে শুধু নাম আছে, user id নেই, তাই `cashier_name`/`voided_by_name`/`by_name`/`removed_by_name` কলাম (মাইগ্রেশন ০০৯); পড়ার সময় `coalesce(users.name, ...)`।
+- এখনো কোনো রাউট প্রজেক্টর ডাকে না (S8 `data_mode`-এ জোড়া হবে); লাইভে ০০৭–০০৯ বসানো বাকি।

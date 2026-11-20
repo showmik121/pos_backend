@@ -54,7 +54,7 @@ const BALANCE_JOIN = (tx: Tx) => tx`
     SELECT sum(l.amount_poisha) AS bal FROM due_ledger l WHERE l.store_id = c.store_id AND l.customer_id = c.id
   ) b ON true`
 const LEDGER_SELECT = (tx: Tx) => tx`
-  SELECT l.id, l.customer_id, l.kind, abs(l.amount_poisha) AS amount, l.sale_id, l.method, l.created_at, u.name AS by_name
+  SELECT l.id, l.customer_id, l.kind, abs(l.amount_poisha) AS amount, l.sale_id, l.method, l.created_at, coalesce(u.name, l.by_name) AS by_name
   FROM due_ledger l LEFT JOIN users u ON u.store_id = l.store_id AND u.id = l.created_by`
 
 async function readCustomer(tx: Tx, storeId: string, id: string): Promise<CustomerWithBalance | null> {
