@@ -31,7 +31,7 @@ Node >= 20.12। `package-lock.json` কমিট করা আছে এবং 
 | `tests/integration/` | আসল Postgres-এ মাইগ্রেশন-পরবর্তী RLS, সিংক, থ্রটল, অনুমতি |
 
 ## API (প্রিফিক্স `/api`)
-`GET /health`, `POST /v1/auth/register-store`, `POST /v1/auth/login`, `GET /v1/me`, `GET|POST /v1/staff`, `PATCH /v1/staff/:id`, সিংক: `POST /v1/sync/register-device`, `POST /v1/sync/push`, `GET /v1/sync/pull?after=&limit=`; ক্র্যাশ রিপোর্ট: `POST /v1/client-errors` (লগইন ছাড়াও; IP প্রতি ঘণ্টায় ১০, মোট ১০০; বডি ≤১৬ KB; `record_client_error` ফাংশন দিয়ে `client_errors` টেবিলে, একই ত্রুটিতে গোনা বাড়ে, ৩০ দিন পর সাফ)।
+`GET /health`, `POST /v1/auth/register-store`, `POST /v1/auth/login`, `GET /v1/me`, `PATCH /v1/store` (মালিক, শুধু নাম), `GET|POST /v1/staff`, `PATCH /v1/staff/:id`, সিংক: `POST /v1/sync/register-device`, `POST /v1/sync/push`, `GET /v1/sync/pull?after=&limit=`; ক্র্যাশ রিপোর্ট: `POST /v1/client-errors` (লগইন ছাড়াও; IP প্রতি ঘণ্টায় ১০, মোট ১০০; বডি ≤১৬ KB; `record_client_error` ফাংশন দিয়ে `client_errors` টেবিলে, একই ত্রুটিতে গোনা বাড়ে, ৩০ দিন পর সাফ)।
 
 ### সিংক (ইভেন্ট-লগ)
 ক্লায়েন্ট প্রতিটি কাজকে অপরিবর্তনীয় ইভেন্ট (`id` uuid ক্লায়েন্ট-জেনারেটেড, `kind`, `at`, `payload`) হিসেবে push করে; একই `id` দুবার এলে একবারই থাকে। সার্ভার `seq` দেয়, pull সেই কার্সরে। ডিভাইস নিবন্ধনে দোকান-ভিত্তিক কোড (A, B…) মেলে, যা বিল নম্বরের উপসর্গ ("A-1001")। কনফ্লিক্টে "শেষ বদল জেতে" ক্লায়েন্ট রিপ্লে করার সময় `at` দেখে ঠিক করে; সার্ভার শুধু লগ রাখে। কর্মচারী শুধু `product_upserted`, `stock_in`, `customer_upserted`, `sale_completed`, `due_received` পাঠাতে পারে (`server/app.ts` `SYNC_STAFF_KINDS`, সাদা-তালিকা); বাকি সব ধরন (বাতিল, সেটিংস, ব্যাচ সরানো, অচেনা নতুন ধরন) মালিক-মাত্র, উত্তর ৪০৩ `forbidden`। নতুন ধরন যোগ করলে সচেতনভাবে এখানে খুলতে হবে। জানা সীমা: pull সব ভূমিকাকে কাঁচা পেলোড দেয়, তাই কর্মচারী ইভেন্টে ক্রয়মূল্য (`costPoisha`) দেখতে পায় (REST লুকায়); সমাধানে ফ্রন্টএন্ডও বদলাতে হবে (নইলে কর্মচারীর সম্পাদনা মালিকের মূল্য ঘষে দেবে)। `sync_events`-এ UPDATE/DELETE-এর অনুমতি নেই। `001`-এর রিলেশনাল টেবিল (products, sales…) এখনো ব্যবহার হয় না; রিপোর্টের জন্য পরে লগ থেকে প্রজেক্ট করা হবে।
@@ -89,3 +89,25 @@ Node >= 20.12। `package-lock.json` কমিট করা আছে এবং 
 - `GET /v1/batches?productId&status=active|expired|expiring&expiringWithinDays&limit&cursor`: মেয়াদের ক্রমে (মেয়াদহীন শেষে), keyset কার্সর; `expiryClass`/`daysLeft` ঢাকার আজকের তারিখে; স্টাফের কাছে `costPoisha` null।
 - `POST /v1/batches/{id}/removals` ও `GET /v1/batch-removals` শুধু মালিক; কারণ বাধ্যতামূলক (৪২২ `reason_required`); সরানো ব্যাচে স্টক শূন্য ও তালিকা-বহির্ভূত; ক্ষতি = পরিমাণ × ক্রয়মূল্য।
 - একই (দোকান, পণ্য)-র স্টক-বদল `pg_advisory_xact_lock` দিয়ে এক এক করে চলে (FIFO বিক্রির সময়ও একই লক)।
+
+## REST: কাস্টমার ও বাকির খাতা
+- `POST /v1/customers` `{id, name, phone?}` (ফোন বাংলা/ইংরেজি অঙ্কে, `01XXXXXXXXX` আকারে সংরক্ষিত; ফোন না থাকলে `""`): ২০১ / একই বডি ২০০ / ভিন্ন বডিতে ৪০৯ `id_conflict` / একই ফোনে অন্য কাস্টমার ৪০৯ `duplicate_phone`। `GET /v1/customers?q&limit&cursor` (নামের ক্রমে), `GET /v1/customers/{id}`; সবখানে `balancePoisha`।
+- `POST /v1/customers/{id}/payments` `{id, amount, method?}` (cash|bkash|nagad|rocket, ডিফল্ট cash; স্টাফও পারে): বাকির চেয়ে বেশি হলে ৪০৯ `overpay`; একই id আবার ২০০। কাস্টমার-সারি `FOR UPDATE` লক করে ব্যালান্স পড়া হয়, তাই সমান্তরাল আদায়ে ব্যালান্স ঋণাত্মক হয় না।
+- `POST /v1/customers/{id}/opening-balances` `{id, amount}` শুধু মালিক।
+- `GET /v1/customers/{id}/ledger` (নতুন আগে, কার্সর) ও `GET /v1/dues` (বাকি > ০, বেশি বাকি আগে, `totalDuePoisha` পুরো দোকানের)।
+- খাতা `due_ledger`-এ চিহ্নযুক্ত পরিমাণ (বাকি বাড়লে +, কমলে −), kind: sale/opening/payment/void; API-তে `amountPoisha` সবসময় ধনাত্মক। বিলপ্রতি একটিই sale ও একটিই void এন্ট্রি (ইউনিক ইনডেক্স)। মাইগ্রেশন ০০৭ হাতে প্রয়োগের আগে `pg_dump`।
+
+## REST: বিক্রি (sales)
+- `POST /v1/sales` `{id, no, prefix?, customerId?, lines:[{productId, qty, discount?}], billDiscount?:{type:amount|percent, value}, payments:[{method, amount}], offline?, at?}` (স্টাফও পারে): ২০১ / একই বডি ২০০ / ভিন্ন বডিতে ৪০৯ `id_conflict` (বডির sha256 `request_hash`)। একই (উপসর্গ, নম্বর) অন্য id-তে ৪০৯ `duplicate_bill_no`। উত্তরের আকার FE-র `Sale`-এর মতো; ক্রয়মূল্য (`costPoisha`) স্টাফের কাছে `null`।
+- হিসাব `domain/cart.ts` + `domain/fifo.ts` (গোল্ডেন ফিক্সচারে বাঁধা) ও `domain/sales.ts` (`planSale`/`planVoid`, বিশুদ্ধ)। অনলাইন বিলে স্টক কম হলে সবটা ফেরত, ৪০৯ `insufficient_stock`; বাকি রাখতে কাস্টমার বাধ্যতামূলক (`customer_required`)।
+- `offline: true` (ফোনে অফলাইনে হওয়া বিল সার্ভারে আসছে): ক্লায়েন্টের `unitPrice` ও `at` (ভবিষ্যতে ৫ মিনিটের বেশি হলে ৪০০) মানা হয়; স্টকের বেশি হলেও নেওয়া হয় — ঘাটতি এক ব্যাচে চাপে (ব্যাচ ঋণাত্মক), বিল `oversold`, অ্যালোকেশনে `oversoldQty`; পণ্যের কোনো ব্যাচ না থাকলে খালি-নম্বরের নতুন ব্যাচ।
+- `POST /v1/sales/{id}/void` `{reason}` শুধু মালিক: স্টক ফেরে (সরানো ব্যাচের অংশ ফেরে না → `lostQty`), বাকির খাতায় `void` এন্ট্রি (কাস্টমার পরে শোধ করে থাকলে শুধু বাকি-থাকা অংশ), উত্তরে `refundPoisha`; আবার বাতিলে ৪০৯ `already_voided`।
+- `GET /v1/sales?from&to&customerId&limit&cursor` (বিক্রির সময়ে নতুন আগে; বাতিল বিলও থাকে), `GET /v1/sales/{id}`।
+- লাইন `sale_items`, ব্যাচ-ভাগ `sale_allocations` (অপরিবর্তনীয়), পেমেন্ট `payments(seq)`; `sales`-এ শুধু `voided*` কলাম বদলানো যায়। লক-ক্রম (create ও void একই): বিল → পণ্য (id ক্রমে) → ব্যাচ-সারি (পণ্য, id ক্রমে) → কাস্টমার-সারি। মাইগ্রেশন ০০৮ হাতে প্রয়োগের আগে `pg_dump` (ডেটা থাকলে guard থামায়)।
+
+## প্রজেক্টর (ইভেন্ট → টেবিল)
+- `src/domain/projection.ts` (বিশুদ্ধ `toCommand`) ইভেন্টকে যাচাই করে কমান্ডে বদলায়; `src/db/pg-projection.ts` কমান্ড টেবিলে বসায়। `project(storeId, events)` একটি লেনদেনে চলে, advisory lock `proj:<store>`।
+- অবস্থা `projection_events` (applied/deferred/ignored/failed); শেষ-বদল-জেতে ঘড়ি `projection_clocks`। নির্ভরতা না এলে `deferred` থাকে, পরের কলে `sync_events` থেকে আবার পড়া হয়।
+- প্রতি ইভেন্ট সেভপয়েন্টে: একটি ব্যর্থ হলে `failed` লেখা হয়, বাকিরা আটকায় না। একই ইভেন্ট দুবার দিলে `duplicate`।
+- ইভেন্টে শুধু নাম আছে, user id নেই, তাই `cashier_name`/`voided_by_name`/`by_name`/`removed_by_name` কলাম (মাইগ্রেশন ০০৯); পড়ার সময় `coalesce(users.name, ...)`।
+- এখনো কোনো রাউট প্রজেক্টর ডাকে না (S8 `data_mode`-এ জোড়া হবে); লাইভে ০০৭–০০৯ বসানো বাকি।

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto"
 import { DomainError } from "../domain/errors.js"
 import { createMemoryCatalog } from "./memory-catalog.js"
+import { createMemoryDues } from "./memory-dues.js"
+import { createMemorySales } from "./memory-sales.js"
 import { createMemoryStock } from "./memory-stock.js"
 import type { ClientErrorReport, NewSyncEvent, PublicUser, Repo, Store, SyncEvent, UserWithHash } from "./types.js"
 
@@ -25,12 +27,16 @@ export function createMemoryRepo(opts: { now?: () => number } = {}): Repo & { pe
     active: u.active,
   })
   const stock = createMemoryStock({ now, catalog, userName: (_s, id) => users.get(id)?.name ?? "অজানা" })
+  const dues = createMemoryDues({ now, userName: (_s, id) => users.get(id)?.name ?? "অজানা" })
+  const sales = createMemorySales({ now, catalog, stock, dues, userName: (_s, id) => users.get(id)?.name ?? "অজানা" })
   const phoneTaken = (phone: string) => [...users.values()].some((u) => u.phone === phone)
   const taken = () => new DomainError("phone_taken", "এই নম্বরে আগেই অ্যাকাউন্ট আছে")
 
   return {
     ...catalog,
     ...stock,
+    ...dues,
+    ...sales,
 
     async registerStore({ storeName, storeKind, ownerName, phone, passwordHash }) {
       if (phoneTaken(phone)) throw taken()
@@ -81,6 +87,14 @@ export function createMemoryRepo(opts: { now?: () => number } = {}): Repo & { pe
 
     async getStore(storeId) {
       return stores.get(storeId) ?? null
+    },
+
+    async renameStore(storeId, name) {
+      const s = stores.get(storeId)
+      if (!s) return null
+      const next = { ...s, name }
+      stores.set(storeId, next)
+      return next
     },
 
     async createStaff(storeId, { name, phone, passwordHash }) {

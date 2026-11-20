@@ -3,7 +3,9 @@ import { normalizePhone } from "../src/domain/phone.js"
 import { hashPassword, verifyPassword, dummyHash } from "../src/auth/password.js"
 import { signToken, verifyToken, assertSecret } from "../src/auth/token.js"
 import { readJson, UUID as UUID_PART, type Result, type RouteCtx } from "./http.js"
+import { duesRoutes } from "./routes/dues.js"
 import { productRoutes } from "./routes/products.js"
+import { salesRoutes } from "./routes/sales.js"
 import { stockRoutes } from "./routes/stock.js"
 import type { ClientErrorReport, NewSyncEvent, PublicUser, Repo, StoreKind } from "../src/db/types.js"
 
@@ -18,6 +20,11 @@ const STATUS: Record<string, number> = {
   phone_taken: 409,
   id_conflict: 409,
   duplicate_barcode: 409,
+  duplicate_phone: 409,
+  overpay: 409,
+  insufficient_stock: 409,
+  already_voided: 409,
+  duplicate_bill_no: 409,
   stale: 409,
   batch_required: 422,
   expiry_required: 422,
@@ -227,6 +234,16 @@ export function createApp(opts: AppOptions): App {
       return { status: 200, body: { user, store } }
     }
 
+    // দোকানের নাম বদল (শুধু মালিক)
+    if (key === "PATCH /v1/store") {
+      const owner = await authenticate(req)
+      requireOwner(owner)
+      const b = await readJson(req)
+      const store = await repo.renameStore(owner.storeId, cleanText(b.name, "দোকানের নাম"))
+      if (!store) throw new DomainError("not_found", "দোকান পাওয়া যায়নি")
+      return { status: 200, body: { store } }
+    }
+
     // সিংক: ইভেন্ট-লগ (ডিভাইস নিবন্ধন, push, pull)
     if (key === "POST /v1/sync/register-device") {
       const user = await authenticate(req)
@@ -315,7 +332,7 @@ export function createApp(opts: AppOptions): App {
         if (!(await withinLimits([[`rest:s:${user.storeId}`, REST_LIMIT]]))) throw tooMany()
       },
     }
-    const rest = (await productRoutes(ctx)) ?? (await stockRoutes(ctx))
+    const rest = (await productRoutes(ctx)) ?? (await stockRoutes(ctx)) ?? (await duesRoutes(ctx)) ?? (await salesRoutes(ctx))
     if (rest) return rest
 
     throw new DomainError("not_found", "পাওয়া যায়নি")
