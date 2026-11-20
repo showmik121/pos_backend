@@ -113,7 +113,8 @@ Design: `docs/adr/0007`. Migration `013_admin_tenant_ops.sql`, rollback `db/roll
    SELECT has_function_privilege('admin_app', 'admin_tenant_list(text,text,text,integer,text,text,integer,integer)', 'EXECUTE'); -- true
    SELECT column_name FROM information_schema.column_privileges WHERE grantee='pos_app' AND table_name='tenant_status_events'; -- id, store_id, at, to_status, message (NO reason)
    ```
-3. Only then merge/deploy the backend. Check `/health`, a shop sync, and `GET /api/v1/admin/tenants` (401 without a token).
+3. Set the GitHub Actions **variable** `APPLIED_MIGRATION` to `13` (Settings -> Secrets and variables -> Actions -> Variables; it is not a secret). The deploy job runs `scripts/deploy-guard-run.mjs` and refuses to deploy while it is missing or below the latest file in `db/migrations` (ADR 0008). Raise it after each future migration is applied live.
+   **Set it before merging this change to `main`**, otherwise the next auto-deploy is blocked. Only then merge/deploy the backend. Check `/health`, a shop sync, and `GET /api/v1/admin/tenants` (401 without a token).
 4. Add the admin site origin to the `ALLOWED_ORIGINS` secret and redeploy (as 3ক step 8). Build `pos_admin` with `NEXT_PUBLIC_ADMIN_API_URL` and `ADMIN_API_ORIGIN` set to the same API origin.
 5. Host `pos_admin` on something that honours `out/_headers` (Cloudflare Pages / Netlify) behind Cloudflare Access or an IP allow-list (open question Q9). Not decided yet: A1 is not live-ready until it is.
 

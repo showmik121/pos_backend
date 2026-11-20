@@ -138,6 +138,14 @@ jobs:
         with:
           node-version: 22
 
+      # RUNBOOK 3খ: the API must not ship before the DB migrations it calls. Set the Actions *variable*
+      # APPLIED_MIGRATION (not a secret) to the last migration number applied on the live DB.
+      - name: Deploy guard (migrations applied?)
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        env:
+          APPLIED_MIGRATION: ${{ vars.APPLIED_MIGRATION }}
+        run: node scripts/deploy-guard-run.mjs
+
       - name: Install dependencies
         if: env.SUPABASE_ACCESS_TOKEN != ''
         run: npm ci --no-audit --no-fund
