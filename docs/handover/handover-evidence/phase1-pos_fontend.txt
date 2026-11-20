@@ -1,0 +1,207 @@
+# Phase 1 fresh-clone run 2026-11-20T14:28:15+06:00
+node v24.18.0 npm 11.16.0
+$ git clone <local pos_fontend> -b chore/handover
+Cloning into 'C:/Users/MDZAHI~1/AppData/Local/Temp/claude/60cb05d7dbc4cace/2f17d7b1-dd5a-4f27-aea9-85d30a7af885/scratchpad/clones/pos_fontend-142815'...
+done.
+HEAD=fc0bfad
+
+$ npm ci
+npm warn deprecated eslint@9.39.5: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+
+added 374 packages, and audited 381 packages in 33s
+
+152 packages are looking for funding
+  run `npm fund` for details
+
+3 vulnerabilities (1 moderate, 2 critical)
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+npm warn allow-scripts 1 package has install scripts not yet covered by allowScripts:
+npm warn allow-scripts   esbuild@0.28.2 (postinstall: node install.js)
+npm warn allow-scripts
+npm warn allow-scripts Run `npm approve-scripts --allow-scripts-pending` to review, or `npm approve-scripts <pkg>` to allow.
+exit=0
+
+$ npm run typecheck
+
+> pos-frontend@0.1.0 typecheck
+> tsc --noEmit
+
+exit=0
+
+$ npm run lint
+
+> pos-frontend@0.1.0 lint
+> eslint .
+
+exit=0
+
+$ npm i --no-save @vitest/coverage-v8@^3.2.0
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+
+added 52 packages, and audited 433 packages in 2s
+
+167 packages are looking for funding
+  run `npm fund` for details
+
+7 vulnerabilities (5 moderate, 2 critical)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+npm warn allow-scripts 1 package has install scripts not yet covered by allowScripts:
+npm warn allow-scripts   esbuild@0.28.2 (install: (install scripts present))
+npm warn allow-scripts
+npm warn allow-scripts Run `npm approve-scripts --allow-scripts-pending` to review, or `npm approve-scripts <pkg>` to allow.
+exit=0
+
+$ npx vitest run --coverage
+  segmented.tsx    |       0 |        0 |       0 |       0 | 1-51              
+  sheet.tsx        |       0 |        0 |       0 |       0 | 1-24              
+  stepper.tsx      |       0 |        0 |       0 |       0 | 1-17              
+ ...142815/src/lib |       0 |        0 |       0 |       0 |                   
+  cn.ts            |       0 |        0 |       0 |       0 | 1-3               
+  config.ts        |       0 |        0 |       0 |       0 | 1-2               
+ ...15/src/lib/api |   54.19 |       95 |      60 |   54.19 |                   
+  client.ts        |   96.42 |      100 |      75 |   96.42 | 19-20             
+  endpoints.ts     |       0 |        0 |       0 |       0 | 1-69              
+  schemas.ts       |     100 |      100 |     100 |     100 |                   
+ ...5/src/lib/auth |       0 |        0 |       0 |       0 |                   
+  storage.ts       |       0 |        0 |       0 |       0 | 1-39              
+ ...rc/lib/browser |   34.37 |    76.92 |   33.33 |   34.37 |                   
+  ...p-download.ts |       0 |        0 |       0 |       0 | 1-10              
+  download.ts      |       0 |        0 |       0 |       0 | 1-11              
+  persist.ts       |     100 |     90.9 |     100 |     100 | 8                 
+ ...src/lib/domain |   95.54 |    96.46 |   88.46 |   95.54 |                   
+  bill.ts          |     100 |      100 |     100 |     100 |                   
+  cart.ts          |     100 |       96 |     100 |     100 | 73                
+  dates.ts         |   85.41 |    82.35 |   77.77 |   85.41 | 16-17,23-24,45-47 
+  errors.ts        |      92 |      100 |      75 |      92 | 28-29             
+  expiry.ts        |     100 |      100 |     100 |     100 |                   
+  fifo.ts          |     100 |      100 |     100 |     100 |                   
+  money.ts         |     100 |      100 |     100 |     100 |                   
+  units.ts         |     100 |      100 |     100 |     100 |                   
+ ...src/lib/format |   82.05 |    96.55 |      75 |   82.05 |                   
+  bn.ts            |     100 |       80 |     100 |     100 | 5                 
+  datetime.ts      |   68.18 |      100 |      50 |   68.18 | 20-24,28-29       
+  phone.ts         |     100 |      100 |     100 |     100 |                   
+ .../src/lib/hooks |       0 |        0 |       0 |       0 |                   
+  use-session.ts   |       0 |        0 |       0 |       0 | 1-18              
+ ...15/src/lib/pwa |   48.78 |     87.5 |   28.57 |   48.78 |                   
+  install.ts       |   48.78 |     87.5 |   28.57 |   48.78 | ...49,52-54,57-59 
+ ...src/lib/report |   52.63 |    81.08 |   71.42 |   52.63 |                   
+  crash-report.ts  |   95.23 |    83.33 |   83.33 |   95.23 | 28-29             
+  send.ts          |       0 |        0 |       0 |       0 | 1-34              
+ .../src/lib/store |   75.89 |    87.62 |   82.92 |   75.89 |                   
+  actions.ts       |   95.54 |    83.96 |   94.11 |   95.54 | 66-75,145         
+  ...p-reminder.ts |    87.5 |      100 |      90 |    87.5 | 20-26             
+  backup.ts        |     100 |    95.65 |     100 |     100 | 39                
+  csv.ts           |   95.74 |    81.69 |     100 |   95.74 | 19-20,85-86       
+  db.ts            |   60.31 |    86.66 |      50 |   60.31 | ...63,67-68,72-77 
+  device.ts        |   73.07 |       84 |   85.71 |   73.07 | 5,7-12,27-33      
+  flow.ts          |     100 |      100 |     100 |     100 |                   
+  rescue.ts        |     100 |    95.45 |     100 |     100 | 23                
+  search.ts        |       0 |        0 |       0 |       0 | 1-10              
+  seed.ts          |     100 |      100 |     100 |     100 |                   
+  selectors.ts     |   91.05 |    92.06 |   77.27 |   91.05 | ...25-126,186-187 
+  types.ts         |       0 |        0 |       0 |       0 | 1-147             
+  wipe.ts          |     100 |      100 |     100 |     100 |                   
+ ...5/src/lib/sync |   92.37 |     88.6 |   94.54 |   92.37 |                   
+  diff.ts          |     100 |    98.33 |     100 |     100 | 59                
+  engine.ts        |   95.29 |    89.36 |     100 |   95.29 | 36-37,117-118     
+  events.ts        |     100 |      100 |     100 |     100 |                   
+  ids.ts           |     100 |      100 |     100 |     100 |                   
+  replay.ts        |   98.79 |    88.59 |     100 |   98.79 | 194-195           
+  schemas.ts       |     100 |      100 |     100 |     100 |                   
+  seed.ts          |   77.33 |    66.66 |     100 |   77.33 | 34-51             
+  state.ts         |      50 |    71.42 |      50 |      50 | 24-30,51-57,60-66 
+-------------------|---------|----------|---------|---------|-------------------
+exit=0
+
+$ fixtures.lock compare (committed clone vs local working tree)
+IDENTICAL
+
+$ npx vitest run -t golden
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90mC:/Users/Md Zahidul Islam/AppData/Local/Temp/claude/60cb05d7dbc4cace/2f17d7b1-dd5a-4f27-aea9-85d30a7af885/scratchpad/clones/pos_fontend-142815[39m
+
+ [2m[90m↓[39m[22m tests/sw.test.ts [2m([22m[2m4 tests[22m[2m | [22m[33m4 skipped[39m[2m)[22m
+ [32m✓[39m tests/golden.test.ts [2m([22m[2m48 tests[22m[2m | [22m[33m47 skipped[39m[2m)[22m[32m 6[2mms[22m[39m
+ [2m[90m↓[39m[22m tests/domain.test.ts [2m([22m[2m16 tests[22m[2m | [22m[33m16 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/void.test.ts [2m([22m[2m7 tests[22m[2m | [22m[33m7 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/device.test.ts [2m([22m[2m9 tests[22m[2m | [22m[33m9 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/client.test.ts [2m([22m[2m7 tests[22m[2m | [22m[33m7 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/store.test.ts [2m([22m[2m20 tests[22m[2m | [22m[33m20 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/sync-roundtrip.test.ts [2m([22m[2m2 tests[22m[2m | [22m[33m2 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/sync-malformed.test.ts [2m([22m[2m12 tests[22m[2m | [22m[33m12 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/sync-replay.test.ts [2m([22m[2m13 tests[22m[2m | [22m[33m13 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/sync-engine.test.ts [2m([22m[2m15 tests[22m[2m | [22m[33m15 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/crash-report.test.ts [2m([22m[2m6 tests[22m[2m | [22m[33m6 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/remove-batch.test.ts [2m([22m[2m6 tests[22m[2m | [22m[33m6 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/backup.test.ts [2m([22m[2m6 tests[22m[2m | [22m[33m6 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/backup-reminder.test.ts [2m([22m[2m15 tests[22m[2m | [22m[33m15 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/bn.test.ts [2m([22m[2m15 tests[22m[2m | [22m[33m15 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/rescue.test.ts [2m([22m[2m5 tests[22m[2m | [22m[33m5 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/landing-content.test.ts [2m([22m[2m3 tests[22m[2m | [22m[33m3 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/install.test.ts [2m([22m[2m7 tests[22m[2m | [22m[33m7 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/wipe.test.ts [2m([22m[2m3 tests[22m[2m | [22m[33m3 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/new-product-flow.test.ts [2m([22m[2m4 tests[22m[2m | [22m[33m4 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/greeting.test.ts [2m([22m[2m12 tests[22m[2m | [22m[33m12 skipped[39m[2m)[22m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[2m | [22m[33m21 skipped[39m[90m (22)[39m
+[2m      Tests [22m [1m[32m1 passed[39m[22m[2m | [22m[33m234 skipped[39m[90m (235)[39m
+[2m   Start at [22m 14:29:12
+[2m   Duration [22m 2.77s[2m (transform 2.42s, setup 0ms, collect 6.96s, tests 6ms, environment 7ms, prepare 6.49s)[22m
+
+exit=0
+
+$ npm run build
+   Generating static pages (19/26) 
+ ✓ Generating static pages (26/26)
+   Finalizing page optimization ...
+   Collecting build traces ...
+   Exporting (0/2) ...
+ ✓ Exporting (2/2)
+
+Route (app)                                 Size  First Load JS
+┌ ○ /                                    7.89 kB         153 kB
+├ ○ /_not-found                            123 B         103 kB
+├ ○ /dues                                3.34 kB         153 kB
+├ ○ /dues/customer                        3.5 kB         154 kB
+├ ○ /login                               1.09 kB         136 kB
+├ ○ /products/detail                     4.61 kB         155 kB
+├ ○ /products/edit                         683 B         154 kB
+├ ○ /products/import                     3.79 kB         154 kB
+├ ○ /products/new                        1.05 kB         155 kB
+├ ○ /products/open                         530 B         154 kB
+├ ○ /reports                             4.28 kB         149 kB
+├ ○ /reports/top                         3.91 kB         149 kB
+├ ○ /sell                                4.56 kB         155 kB
+├ ○ /sell/discount                       2.94 kB         153 kB
+├ ○ /sell/pay                            5.24 kB         155 kB
+├ ○ /sell/receipt                        4.28 kB         154 kB
+├ ○ /sell/search                         2.18 kB         152 kB
+├ ○ /settings                            6.16 kB         151 kB
+├ ○ /settings/staff                      2.31 kB         147 kB
+├ ○ /signup                               1.7 kB         136 kB
+├ ○ /stock                               4.68 kB         149 kB
+├ ○ /stock/expiry                        3.15 kB         153 kB
+├ ○ /stock/in                            5.16 kB         155 kB
+└ ○ /stock/low                           3.43 kB         148 kB
++ First Load JS shared by all             103 kB
+  ├ chunks/255-0e5ac6cd71b0e266.js       46.7 kB
+  ├ chunks/4bd1b696-c023c6e3521b1417.js  54.2 kB
+  └ other shared chunks (total)          2.01 kB
+
+
+○  (Static)  prerendered as static content
+
+exit=0
+DONE

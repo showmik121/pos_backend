@@ -1,0 +1,78 @@
+# Phase 5 CI/deploy status (read-only gh) 2026-11-20T14:47:24+06:00
+
+== pos_backend
+https://github.com/showmik121/pos_backend.git
+43e68a1
+43e68a1b1a29a199783863749f2ffe8551725a64	refs/heads/chore/ha
+## chore/handover...origin/chore/handover
+$ gh run list --branch chore/handover --limit 5
+/usr/bin/bash: line 1: gh: command not found
+$ gh run list --branch main --limit 3
+/usr/bin/bash: line 1: gh: command not found
+$ gh pr list
+/usr/bin/bash: line 1: gh: command not found
+
+== pos_fontend
+https://github.com/showmik121/pos_fontend.git
+fc0bfad
+fc0bfad0bac593b56a009eb9e0df789f74264d30	refs/heads/chore/ha
+## chore/handover...origin/chore/handover
+$ gh run list --branch chore/handover --limit 5
+/usr/bin/bash: line 1: gh: command not found
+$ gh run list --branch main --limit 3
+/usr/bin/bash: line 1: gh: command not found
+$ gh pr list
+/usr/bin/bash: line 1: gh: command not found
+== pos_backend public API
+unparseable/truncated: {
+  "total_count": 3,
+  "workflow_runs": [
+    {
+      "id": 44614151439,
+      "name": "CI",
+      "node_id": "WFR_kwLOVrt1gc8AAAAKYzXtDw",
+      "head_branch": "chore/handover",
+      "head_sha": "4
+== pos_fontend public API
+no runs
+
+43e68a1 docs: record backend CI result on the handover branch
+Backend CI passed on Linux for 7b15588 (GitHub Actions); frontend CI does not
+run on branch pushes, only on PRs and main. Add the evidence file and update
+checklist item A4 accordingly.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+
+5	6
+12	7
+
+# main divergence + CI runs (full parse) 2026-11-20T14:47:42+06:00
+== pos_backend
+remote main:  08717b02e3c49d90ef2dbb0af0b0d3d8aa248c3d
+local origin/main: 08717b02e3c49d90ef2dbb0af0b0d3d8aa248c3d
+merge-base(main, chore/handover): 015029af
+commits on main NOT in branch:
+08717b0 feat: PATCH /v1/store — মালিক দোকানের নাম বদলাতে পারে (মাইগ্রেশন ০১১) (#10)
+b6b42b6 test: স্টক-জমা (planStockIn) গোল্ডেন ফিক্সচার (FE-র সাথে একই লক) (#8)
+0a8aa8a feat: বিক্রি API (S6, মাইগ্রেশন ০০৮) (#7)
+64757c2 Merge pull request #6 from showmik121/feat/dues-api
+85181c7 feat: কাস্টমার ও বাকির খাতা API (মাইগ্রেশন ০০৭)
+runs on branch: 43e68a1 CI push completed success; e4052fe CI push completed cancelled; 7b15588 CI push completed success
+== pos_fontend
+remote main:  d3a0ec6f7233d039c7da596795d72470416450b2
+local origin/main: d3a0ec6f7233d039c7da596795d72470416450b2
+merge-base(main, chore/handover): 1b1965b1
+commits on main NOT in branch:
+d3a0ec6 feat: দোকানের খরচ (ক্যাটেগরি, খাতা, নিট লাভ) (#36)
+7162509 feat: পণ্যের নামে ইংরেজি লেখার ইঙ্গিত ও ইংরেজি কিবোর্ড (lang=en) (#35)
+8950b73 feat: বিক্রেতার নোট — আনতে হবে (#34)
+79856ef feat: বিলে একটানা স্ক্যান (ক্যামেরা খোলা থাকে, একের পর এক পণ্য যোগ) (#33)
+b6b5a47 feat: কাস্টমারের খাতা ছবি করে শেয়ার (#32)
+9a76ab4 feat: কাস্টমারের বাকির সীমা (সম্পাদনাযোগ্য) ও বিলের সময় সতর্কতা (#31)
+40fce7a feat: জমার রসিদ (আংশিক জমাসহ) শেয়ার ও হোমের তালিকায় এসএমএস বোতাম (#30)
+dca4eb4 feat: আদায়ের প্রতিশ্রুতির তারিখ ও হোমে "আজ আদায়ের কথা" (#29)
+dbc54a2 feat: বাকির তালিকা খাতার ধাঁচে (কলাম, বাছাই, পুরনো-বাকি ফিল্টার) ও কল/এসএমএস তাগাদা (#28)
+e244137 feat: নতুন দোকানে ফার্মেসি / রিটেইল দুটি বিকল্প (#27)
+8f2ddfd feat: নিজের হিসাব Excel-এ নামানো (পণ্য-স্টক, বিক্রি, বাকির খাতা) (#26)
+6845538 feat: দোকানের নাম বদলানো (মালিক) (#25)
+runs on branch: none

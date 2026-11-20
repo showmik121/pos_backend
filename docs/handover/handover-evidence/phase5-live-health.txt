@@ -1,0 +1,27 @@
+# Phase 5 live check 2026-11-20T14:28:39+06:00 (read-only GET/HEAD, no credentials)
+$ curl -sS -w "\nHTTP %{http_code} in %{time_total}s\n" https://gaxzkbcomeexlnzquvzf.supabase.co/functions/v1/api/health
+{"status":"ok"}
+HTTP 200 in 0.427519s
+
+$ curl -sSI https://bipone.netlify.app/ (headers)
+HTTP/1.1 200 OK
+Accept-Ranges: bytes
+Age: 1
+Cache-Control: public,max-age=0,must-revalidate
+Cache-Status: "Netlify Edge"; fwd=miss; fwd-status=200; stored
+Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://*.supabase.co; worker-src 'self'; manifest-src 'self'; frame-ancesto
+Content-Type: text/html; charset=UTF-8
+Cross-Origin-Opener-Policy: same-origin
+Date: Fri, 20 Nov 2026 08:28:41 GMT
+Etag: "46f5827d5049d95d8982014b2ea2dc07-ssl"
+Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=()
+Referrer-Policy: strict-origin-when-cross-origin
+Server: Netlify
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+Vary: Accept-Encoding
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+X-Nf-Request-Id: 01M7W14W970SNB8KMK790H625X
+
+
+# code expectation

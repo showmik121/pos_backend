@@ -45,8 +45,8 @@
 |---|---|---|---|
 | D1 | 🔴 | **আসল ফোনে (কম দামি Android, iOS Safari), আসল প্রিন্টারে কোনো ম্যানুয়াল পরীক্ষা হয়নি।** সব পরীক্ষা Windows-এর Chromium-এ ফোন-অনুকরণে | ❌ |
 | D2 | 🟠 | E2E-র সব নতুন পরীক্ষা **নকল API**-তে; আসল ব্যাকএন্ড-জব (`E2E_REAL=1`) এই কাজে চালানো হয়নি | 🔎 |
-| D3 | 🟠 | CI এই কাজের কোনো বদলে চালানো হয়নি (কিছু পুশ হয়নি), তাই Linux-এ ফলাফল অজানা | 🔎 |
-| D4 | 🟠 | ব্যাকএন্ড ইন্টিগ্রেশন টেস্ট (আসল Postgres) এই কাজে চালানো হয়নি; Supabase-এর নিজস্ব পরিবেশে কখনোই নয় | 🔎 |
+| D3 | 🟠 | **হালনাগাদ (QA পুনঃপরীক্ষা ২০২৬-১১-২০):** ব্যাকএন্ড CI `chore/handover`-এ Linux-এ সবুজ (`7b15588`, `43e68a1`; `e4052fe` বাতিল)। ফ্রন্টএন্ড CI শাখা-পুশে চলেই না (শুধু PR ও `main`), তাই ফ্রন্টএন্ডের Linux-ফলাফল অজানা — `handover-evidence/phase5-ci-status.txt` | ⚠ |
+| D4 | 🟠 | **হালনাগাদ:** ব্যাকএন্ড ইন্টিগ্রেশন ১৮/১৮ পাস, তবে স্থানীয় অস্থায়ী Postgres 18.7-এ (CI ও Supabase Postgres-এর সংস্করণের সাথে মেলে না) — `phase2-integration.txt`। Supabase-এর নিজস্ব পরিবেশে এখনো নয় | ⚠ |
 | D5 | 🟠 | লাইভ API-তে লোড, আসল পাসওয়ার্ডে scrypt-সময় | 🔎 |
 | D6 | 🟡 | কভারেজ: ফ্রন্টএন্ড লজিক ৭৬.৬% স্টেটমেন্ট (লক্ষ্য ৮০%), পুরো `src` ২৪.৬% (কম্পোনেন্ট শুধু E2E-তে), ব্যাকএন্ড ইউনিট ৫৩.৬-৬২.২% (Postgres-কোড ইউনিটে নয়) | ⚠ |
 | D7 | 🟡 | অ্যাক্সেসিবিলিটি: axe-core ০ লঙ্ঘন ৩৭৫px-এ ৩২ পর্দায়, কিন্তু কিবোর্ড/স্ক্রিন-রিডার, ৭৬৮/১৪৪০px, ল্যান্ডস্কেপ, বড় ফন্ট, ছবির ওপর কনট্রাস্ট অযাচাই; স্ক্রিনশট-baseline নেই | ⚠ |
@@ -62,3 +62,24 @@
 | E4 | 🟠 | ডিপ্লয়ের ক্রম-নির্ভরতা: সিংকের নিয়ম বদলালে ফ্রন্টএন্ড আগে; ভুল ক্রমে স্টাফের ফোনের সিংক থামতে পারে | ব্যাকএন্ড রানবুক ২ | ⚠ (নথিভুক্ত) |
 | E5 | 🟡 | লাইভ ডেটাবেসের মাইগ্রেশন হাতে চালাতে হয়, CI করে না; `down`-মাইগ্রেশন নেই | রানবুক ৩ | ⚠ (নথিভুক্ত) |
 | E6 | 🟡 | ক্যামেরা-স্ক্যান ব্রাউজারের `BarcodeDetector`-এর ওপর নির্ভর করে (সব ব্রাউজারে নেই); USB/ব্লুটুথ স্ক্যানার কিবোর্ড-ইনপুট হিসেবে অযাচাই | ফ্রন্টএন্ড `CLAUDE.md` | 🔎 |
+
+## চ. QA পুনঃপরীক্ষার নতুন ফলাফল (2026-11-20, English) — evidence in `docs/handover/handover-evidence/`
+
+New or newly confirmed in this run. Severity: 🔴 high · 🟠 medium · 🟡 low.
+
+| # | Sev | Finding | Evidence | Status |
+|---|---|---|---|---|
+| F1 | 🔴 | **`chore/handover` is not based on current `main`.** Backend `main` has 5 commits the branch lacks (migrations 007-011, sales API, PATCH /v1/store); frontend `main` has 12 (expenses, credit limit, continuous scan, Excel export...). Everything tested in this run is the branch, not what a client gets from `main`. Merge conflicts are likely (both sides touched sync/backend files). | `phase5-ci-status.txt` | ❌ |
+| F2 | 🔴 | **Sale can be saved without a sync event.** `db-provider.tsx:111-120` wraps `eventsFromChange`+`writeSync` in `catch { out = next }`: no log, no flag. The bill prints normally but never reaches the server / other phones. | `phase4-silent-failures.txt` #1 (verified) | ❌ |
+| F3 | 🔴 | **Corrupt local DB is replaced by an empty one and then overwritten.** `lib/store/db.ts:42-54`: JSON.parse failure returns `emptyDb()` with no `.corrupt` copy; next save destroys the raw data; bill counter restarts at 1000. | `phase4-silent-failures.txt` #3 (verified) | ❌ |
+| F4 | 🔴 | **Local save failure only shows a banner**; `/sell/pay` still shows a successful receipt, the sale exists only in memory and is lost on reload; the banner flag clears after the next successful save. | `phase4-silent-failures.txt` #2 | ❌ |
+| F5 | 🟠 | **Restore reports success without checking the write and does not reconcile cursor / outbox / bill counter**: older backup can re-issue bill numbers; sales missing from the backup are removed locally but stay on the server. | `phase4-silent-failures.txt` #7 | ❌ |
+| F6 | 🟠 | **Pulled events can be dropped silently** (invalid/unknown/exception -> ignored, cursor advances, never counted); deferred events can wait forever; corrupt sync state resets cursor and loses the unsent outbox. | `phase4-silent-failures.txt` #4-#6 | ❌ |
+| F7 | 🔴 | **B1 confirmed at runtime and in the UI:** staff `GET /v1/sync/pull` returns events containing `costPoisha`; staff product page shows "ক্রয়মূল্য ৳ ১০০.৫০". | `phase4-runtime-isolation-proof.txt`, `screens/p3-375-staff-sees-cost-price.png` | ❌ |
+| F8 | 🟠 | **Expired stock on hand is not surfaced on the home "নজর দিন" panel or the stock-page expiry count** (home says "সব ঠিক আছে" with 5 expired pieces in stock). `selectors.ts:84-86` counts only the 30-day bucket. `/stock/expiry` does list it. | `phase3-browser-qa.txt` D-P3-2 | ❌ |
+| F9 | 🟠 | **Hold/resume bills is not built** (single draft cart). PRD P0. | `phase3-browser-qa.txt` D-P3-4 | ❌ |
+| F10 | 🟡 | ASCII digits in the Bangla UI ("1টি", "স্টকে মাত্র 10 পিস আছে"); staff nav shows "রিপোর্ট" which is owner-only; cart accepts qty above sellable stock (blocked only at payment); stock-in accepts an already-expired date silently. | `phase3-browser-qa.txt` D-P3-3,5,6,7 | ❌ |
+| F11 | 🟠 | Live API is still the old build: live `/health` = `{"status":"ok"}`; current code returns `{"status":"ok","db":"ok"}` (local run confirmed). Deploy pipeline / token status unknown. | `phase5-live-health.txt`, `phase2-integration.txt` | ❌ |
+| F12 | 🟠 | Server never validates sync event bodies (staff can push arbitrary sale/stock/due events with back-dated `at`), no per-store event quota, and `ON CONFLICT DO NOTHING` acknowledges a replayed id with different content. | `phase4-security-review.txt` H2, M7; `phase4-silent-failures.txt` #11 | ❌ |
+| F13 | 🟡 | Healthcare: no prescription/patient capture exists (PRD P-8 not built). Before it is built: field-level encryption, read-audit log, retention/erase path and consent are all missing; today's PII (customer name+phone, dues) is plaintext in localStorage and in plaintext backup files. | `phase4-security-review.txt` PHI section | ❌ |
+| F14 | 🟡 | Test-tooling traps (not product bugs): in Git-Bash `NEXT_PUBLIC_API_URL=/api npm run build` bakes `C:/Program Files/Git/api` into the bundle (documented in frontend CLAUDE.md); `-t golden` matches nothing in the backend (describe is named in Bangla; run `tests/unit/golden.test.ts`). | `phase2-e2e-INVALID-*`, `phase1-pos_backend-golden.txt` | ⚠ |

@@ -1,0 +1,11 @@
+# npm audit --omit=dev 2026-11-20T14:31:38+06:00
+
+== pos_backend
+$ npm audit --omit=dev
+found 0 vulnerabilities
+exit=0
+
+== pos_fontend
+$ npm audit --omit=dev
+found 0 vulnerabilities
+exit=0

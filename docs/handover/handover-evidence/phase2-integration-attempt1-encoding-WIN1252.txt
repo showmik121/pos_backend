@@ -1,0 +1,92 @@
+# Phase 2 backend integration vs LOCAL throwaway embedded Postgres 2026-11-20T14:32:23+06:00 (credentials redacted; NOT the live DB)
+# Postgres server: PostgreSQL 18.7 on x86_64-windows, compiled by msvc-19.44.35229, 64-bit
+# NOTE: CI uses postgres:16; this local server is the embedded-postgres package version above.
+$ npm run db:migrate   (fresh DB)
+    at Socket.data (file:///C:/Users/Md%20Zahidul%20Islam/AppData/Local/Temp/claude/60cb05d7dbc4cace/2f17d7b1-dd5a-4f27-aea9-85d30a7af885/scratchpad/clones/pos_backend-142815/node_modules/postgres/src/connection.js:324:9)
+    at Socket.emit (node:events:509:28)
+    at addChunk (node:internal/streams/readable:563:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)
+    at Readable.push (node:internal/streams/readable:394:5)
+    at TCP.onStreamRead (node:internal/stream_base_commons:189:23) {
+  severity_local: 'ERROR',
+  severity: 'ERROR',
+  code: '22P05',
+  file: 'mbutils.c',
+  line: '1901',
+  routine: 'report_untranslatable_char'
+}
+
+Node.js v24.18.0
+exit=1
+$ npm run db:migrate   (2nd run, must be a no-op)
+  severity: 'ERROR',
+  code: '22P05',
+  file: 'mbutils.c',
+  line: '1901',
+  routine: 'report_untranslatable_char'
+}
+
+Node.js v24.18.0
+exit=1
+$ npm run test:integration
+[32m- 201[39m
+[31m+ 500[39m
+
+[36m [2m❯[22m shop tests/integration/pg.test.ts:[2m40:22[22m[39m
+    [90m 38| [39m    [35mconst[39m ph [33m=[39m [34mphone[39m()
+    [90m 39| [39m    const r = await call("POST", "/v1/auth/register-store", { body: { …
+    [90m 40| [39m    [34mexpect[39m(r[33m.[39mstatus)[33m.[39m[34mtoBe[39m([34m201[39m)
+    [90m   | [39m                     [31m^[39m
+    [90m 41| [39m    [35mconst[39m sp [33m=[39m [32m`018[39m[36m${[39mph[33m.[39m[34mslice[39m([34m3[39m)[36m}[39m[32m`[39m
+    [90m 42| [39m    const st = await call("POST", "/v1/staff", { token: r.json.token, …
+[90m [2m❯[22m tests/integration/pg.test.ts:[2m271:15[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/18]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/integration/pg.test.ts[2m > [22mPostgreSQL: আসল ডাটাবেসে[2m > [22mস্টক API: জমা, একই ব্যাচে মেশা, ইডেমপোটেন্ট রসিদ, সমান্তরাল জমায় কিছু হারায় না
+[31m[1mAssertionError[22m: expected 500 to be 201 // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 201[39m
+[31m+ 500[39m
+
+[36m [2m❯[22m shop tests/integration/pg.test.ts:[2m40:22[22m[39m
+    [90m 38| [39m    [35mconst[39m ph [33m=[39m [34mphone[39m()
+    [90m 39| [39m    const r = await call("POST", "/v1/auth/register-store", { body: { …
+    [90m 40| [39m    [34mexpect[39m(r[33m.[39mstatus)[33m.[39m[34mtoBe[39m([34m201[39m)
+    [90m   | [39m                     [31m^[39m
+    [90m 41| [39m    [35mconst[39m sp [33m=[39m [32m`018[39m[36m${[39mph[33m.[39m[34mslice[39m([34m3[39m)[36m}[39m[32m`[39m
+    [90m 42| [39m    const st = await call("POST", "/v1/staff", { token: r.json.token, …
+[90m [2m❯[22m tests/integration/pg.test.ts:[2m309:15[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/18]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/integration/pg.test.ts[2m > [22mPostgreSQL: আসল ডাটাবেসে[2m > [22mস্টক API: ব্যাচ পেজিনেশন, status ফিল্টার, সরানো (শুধু মালিক), ক্ষতির খাতা, অন্য দোকানে অদৃশ্য
+[31m[1mAssertionError[22m: expected 500 to be 201 // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 201[39m
+[31m+ 500[39m
+
+[36m [2m❯[22m shop tests/integration/pg.test.ts:[2m40:22[22m[39m
+    [90m 38| [39m    [35mconst[39m ph [33m=[39m [34mphone[39m()
+    [90m 39| [39m    const r = await call("POST", "/v1/auth/register-store", { body: { …
+    [90m 40| [39m    [34mexpect[39m(r[33m.[39mstatus)[33m.[39m[34mtoBe[39m([34m201[39m)
+    [90m   | [39m                     [31m^[39m
+    [90m 41| [39m    [35mconst[39m sp [33m=[39m [32m`018[39m[36m${[39mph[33m.[39m[34mslice[39m([34m3[39m)[36m}[39m[32m`[39m
+    [90m 42| [39m    const st = await call("POST", "/v1/staff", { token: r.json.token, …
+[90m [2m❯[22m tests/integration/pg.test.ts:[2m328:15[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/18]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m18 failed[39m[22m[90m (18)[39m
+[2m   Start at [22m 14:32:27
+[2m   Duration [22m 35.39s[2m (transform 162ms, setup 0ms, collect 249ms, tests 34.88s, environment 0ms, prepare 89ms)[22m
+
+exit=1

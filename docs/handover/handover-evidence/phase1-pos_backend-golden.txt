@@ -1,0 +1,12 @@
+# backend golden by file 2026-11-20T14:30:45+06:00
+$ npx vitest run tests/unit/golden.test.ts
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90mC:/Users/Md Zahidul Islam/AppData/Local/Temp/claude/60cb05d7dbc4cace/2f17d7b1-dd5a-4f27-aea9-85d30a7af885/scratchpad/clones/pos_backend-142815[39m
+
+ [32m✓[39m tests/unit/golden.test.ts [2m([22m[2m48 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m48 passed[39m[22m[90m (48)[39m
+[2m   Start at [22m 14:30:47
+[2m   Duration [22m 650ms[2m (transform 68ms, setup 0ms, collect 96ms, tests 20ms, environment 0ms, prepare 157ms)[22m
+

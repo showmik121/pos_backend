@@ -5,9 +5,16 @@
 **অবস্থা:** ✅ প্রমাণসহ সম্পন্ন · ⚠ আংশিক/শর্তসাপেক্ষ · ❌ করা হয়নি/ব্যর্থ · 🔎 যাচাই করার উপায় এই কাজে ছিল না।
 নিয়ম: প্রমাণ ছাড়া কোনো আইটেম ✅ নয়। প্রমাণ নেই = ❌ বা 🔎।
 
-## সারাংশ: production audit
+## QA পুনঃপরীক্ষা ২০২৬-১১-২০ — সর্বশেষ ফলাফল (English; বিস্তারিত `handover-evidence/READINESS_REPORT.md`)
 
-**Production audit: ৫৫/১০০ — ঝুঁকিপূর্ণ (Risky): শুধু একটি ছোট পাইলট/অভ্যন্তরীণ বিটায়, প্রতিদিনের হাতে-ব্যাকআপসহ, ছাড়া যায়। এখনই "কোনো সমস্যা ছাড়া" ক্লায়েন্টকে হস্তান্তর করা যায় না।**
+**Verdict: NOT READY for "zero-problem" client handover. Production audit re-scored 58/100 (previously 55/100, +3). Supervised pilot only, after blockers 1-2 below.**
+Tested: `chore/handover` (frontend `fc0bfad`, backend `43e68a1`), fresh clones, Node 24.18 / npm 11.16. Scoring method: same caps as the previous audit (cap 69 while restore is undrilled and live version is unconfirmed; <=84 without frontend CI on the change), plus points for newly proven items and deductions for newly confirmed defects — see the report.
+
+Top blockers: (1) branch not based on current `main`; (2) silent data-loss paths on sale/save/restore; (3) staff can read cost price (sync pull + UI); (4) restore drill never done; (5) live API is an old build.
+
+## সারাংশ (পূর্ববর্তী): production audit
+
+**Production audit: ৫৫/১০০ — ঝুঁকিপূর্ণ (Risky): শুধু একটি ছোট পাইলট/অভ্যন্তরীণ বিটায়, প্রতিদিনের হাতে-ব্যাকআপসহ, ছাড়া যায়। এখনই "কোনো সমস্যা ছাড়া" ক্লায়েন্টকে হস্তান্তর করা যায় না।**  _(স্কোরটি এই পুনঃপরীক্ষার আগের; এখন ৫৮/১০০)_
 
 স্কোর ৬৯-এ আটকানো (cap) হয়েছে, কারণ: (১) ডাটাবেস restore-পথ কখনো চালিয়ে দেখা হয়নি, অথচ মাইগ্রেশনে `down` নেই; (২) লাইভে কোন সংস্করণ চলছে যাচাই করা যায়নি (লাইভ `/health` পুরনো আকার)। ৮৪-র উপরে নয়, কারণ CI এই বদলগুলোতে চালানো হয়নি (কিছু পুশ হয়নি)। দাম-গোপনীয়তা (B1) ও ঘড়ি-ফাঁক (B2) সহ উপরের সীমাবদ্ধতা স্কোরে আরও কেটেছে।
 
@@ -34,6 +41,7 @@
 | A2 | বদলের তালিকা (ব্যাকএন্ড `chore/handover`) | ✅ | `c403cc7` লকফাইল/`node_modules` সিমলিংক সরানো/`npm ci`; `c8d8397` সিংক-সাদাতালিকা; `c4d7aa3` `.gitattributes`; `7b15588` RUNBOOK/ONBOARDING | — |
 | A3 | বদলের তালিকা (ফ্রন্টএন্ড `chore/handover`) | ✅ | `faa50ce` লকফাইল/`npm ci`; `f009ccb` বিকৃত সিংক-ইভেন্ট; `6d16627` E2E+৩৭৫px; `302f7c3` `.gitattributes`; `20ae5ae` ফন্ট; `a72f3da` RUNBOOK/ONBOARDING | — |
 | A4 | এই বদলে CI সবুজ | ⚠ ব্যাকএন্ড ✅ (শাখা-পুশ), ফ্রন্টএন্ড 🔎 | ব্যাকএন্ড: `7b15588`-এ CI `success` (Linux, GitHub Actions), পরের কমিটে চলছিল; ফ্রন্টএন্ড: ০টি রান, কারণ ওয়ার্কফ্লো শুধু PR ও `main`-এ চলে — `handover-evidence/ci-status.txt` | ফ্রন্টএন্ড PR খুলে CI দেখুন (`e2e-real` ব্যাকএন্ড `main`-এর লকফাইল চায়: PR_DESCRIPTIONS.md-এর ক্রম-অংশ দেখুন) |
+| A7 | **`chore/handover` বর্তমান `main`-এর ওপর নয়**: ব্যাকএন্ড `main` ৫টি, ফ্রন্টএন্ড `main` ১২টি কমিট এগিয়ে (মাইগ্রেশন ০০৭-০১১, খরচ, বাকির সীমা ইত্যাদি) — এই পরীক্ষায় সেগুলো নেই | ❌ **নতুন ব্লকার** | `phase5-ci-status.txt` | `main` মার্জ করে পুনঃপরীক্ষা |
 | A5 | `main`-এ branch protection / প্রয়োজনীয় চেক | 🔎 | রিমোট সেটিং দেখার উপায় ছিল না | GitHub সেটিংসে চালু করুন |
 | A6 | অন্য শাখাগুলোর হিসাব: ফ্রন্টএন্ডে ২৭টি, ব্যাকএন্ডে ১৩টি রিমোট শাখা | ❌ | `git branch -r` | কোনগুলো মার্জ/মুছবে ঠিক করুন; বিশেষত ব্যাকএন্ডের `feat/dues-api`→`feat/projector` ধারা (মাইগ্রেশন ০০৭-০০৯) যা অপর্যালোচিত |
 
@@ -63,11 +71,11 @@
 | C5 | কর্মচারী ক্রয়মূল্য দেখতে পায় না | ❌ **ব্যর্থ (জানা ত্রুটি)** | `test.fail` চিহ্নিত; `E2E_EXPECT_FIXED=1` দিলে ৩টি জায়গা ব্যর্থ দেখায় (বিবরণ, সম্পাদনা, স্টক-জমা) |
 | C6 | মেয়াদোত্তীর্ণ ব্যাচ কখনো বিক্রি হয় না (খোঁজা, পুরনো কার্ট, সরাসরি পেমেন্ট, মিশ্র ব্যাচ, আজ-শেষ) | ✅ | ৬ষ্ঠ টেস্ট |
 | C7 | ফোনের ঘড়ি পেছালেও মেয়াদোত্তীর্ণ বিক্রি হয় না | ❌ **ব্যর্থ (জানা ফাঁক)** | `test.fail`; ৬০ দিন পেছানোয় ব্যাচ বিক্রি-যোগ্য হয় |
-| C8 | সম্পূর্ণ Playwright স্যুট | ✅ | ১২ পাস, ১ বাদ (আসল ব্যাকএন্ড লাগে), এর মধ্যে ২টি উপরের জানা-ত্রুটির টেস্ট; exit ০ |
+| C8 | সম্পূর্ণ Playwright স্যুট | ✅ **৩ বার পুনরাবৃত্তি, ফ্লাকি নেই**: প্রতি রানে ১২ পাস / ১ বাদ / exit ০ (দুটি `test.fail` জানা-ত্রুটি সহ) | `phase2-e2e-run1.txt`, `run2`, `run3` (আগের ৩টি রান `…INVALID…` — Git-Bash `/api` পাথ-রূপান্তরের ভুল, পণ্যের নয়) |
 | C9 | কভারেজ ≥ ৮০% | ⚠ না | ফ্রন্টএন্ড লজিক ৭৬.৬%/শাখা ৮৮.৭%; পুরো `src` ২৪.৬% (কম্পোনেন্ট E2E-তে); ব্যাকএন্ড ৫৩.৬% (`src`), ৬২.২% (`src`+`server`) — `tests-and-coverage.txt`। সবচেয়ে দুর্বল: `api/endpoints.ts`, `auth/storage.ts`, `report/send.ts` (০%) |
 | C10 | ৩৭৫px-এ সব পাতা/শিট ঘোরা (৩২টি) | ✅ | `e2e/qa-375.e2e.ts`: উপচে পড়া/কনসোল-ত্রুটি/ভাঙা অ্যাসেট ০; axe-core ৪.১৪.১ ০ লঙ্ঘন; ৫টি ছোট সমস্যা `KNOWN_LIMITATIONS.md` D8-এ |
-| C11 | ব্যাকএন্ড ইন্টিগ্রেশন টেস্ট (আসল Postgres, RLS) | 🔎 | এই কাজে চালানো হয়নি (CI-র `postgres` জবে চলে) |
-| C12 | আসল ব্যাকএন্ডসহ E2E (`E2E_REAL=1`) | 🔎 | বাদ গেছে |
+| C11 | ব্যাকএন্ড ইন্টিগ্রেশন টেস্ট (আসল Postgres, RLS) | ⚠ **পুনঃপরীক্ষা: ১৮/১৮ পাস** (স্থানীয় Postgres 18.7, CI-র ১৬ নয়; মাইগ্রেশন দুবার চালানো = no-op) | `phase2-integration.txt` (প্রথম চেষ্টা এনকোডিং-ত্রুটিতে ব্যর্থ: `phase2-integration-attempt1-encoding-WIN1252.txt`) |
+| C12 | আসল ব্যাকএন্ডসহ E2E (`E2E_REAL=1`) | 🔎 স্বয়ংক্রিয় নয়; তবে হাতে-ব্রাউজারে আসল ব্যাকএন্ডে সাইন-আপ, বিক্রি, সিংক, দ্বিতীয় ডিভাইস সব চালানো হয়েছে ✅ | `phase3-browser-qa.txt` |
 | C13 | আসল ফোন (Android/iOS), আসল প্রিন্টার | ❌ | হয়নি |
 | C14 | ফায়ারফক্স/সাফারি | ❌ | শুধু Chromium |
 | C15 | লোড/স্ট্রেস | ❌ | হয়নি |
@@ -78,7 +86,7 @@
 |---|---|---|---|
 | D1 | লাইভ ফ্রন্টএন্ড পৌঁছায়, নিরাপত্তা-হেডার আছে (CSP, HSTS, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy) | ✅ | `live-checks.txt` |
 | D2 | লাইভ API পৌঁছায় | ✅ | `live-checks.txt`: HTTP ২০০, ০.৫৬সে |
-| D3 | লাইভ API বর্তমান `main`-এর কোড চালাচ্ছে | ❌ | `/health` বডিতে `db` ফিল্ড নেই |
+| D3 | লাইভ API বর্তমান কোড চালাচ্ছে | ❌ (২০২৬-১১-২০ আবার নিশ্চিত: লাইভ `{"status":"ok"}`, লোকাল কোড `{"status":"ok","db":"ok"}`) | `phase5-live-health.txt` |
 | D4 | লাইভ ডাটাবেসে মাইগ্রেশন `main`-এর সাথে মেলে | 🔎 | যাচাইয়ের SQL ব্যাকএন্ড রানবুক ৩-এ আছে; চালানো হয়নি |
 | D5 | স্টেজিং পরিবেশ আছে | ❌ | একটি মাত্র Supabase প্রজেক্ট (`gaxz…`) জানা |
 | D6 | `.env.example` আছে, গোপন তথ্য কমিট নেই | ✅ | দুই রিপোতে ফাইল আছে; গিট-ইতিহাস-স্ক্যানে আসল গোপন তথ্য মেলেনি (প্যাটার্ন-ভিত্তিক; `gitleaks` ছিল না) |
@@ -136,6 +144,44 @@
 | J2 | ক্লায়েন্টের সাথে "এই সংস্করণ কী করে, কী করে না" লিখিত সম্মতি | ❌ | এই ডক ও `KNOWN_LIMITATIONS.md` গ-অংশ ভিত্তি হতে পারে |
 
 ---
+
+## ঞ. QA পুনঃপরীক্ষা ২০২৬-১১-২০ — আইটেম-তালিকা (English)
+
+Legend: ✅ proven with evidence · ⚠ partial / conditional · ❌ failed or not built · 🔎 could not be tested here. Evidence: backend/shared files under `pos_backend/docs/handover/handover-evidence/`; frontend files (E2E runs, browser QA, silent-failure review, screenshots) under `pos_fontend/docs/handover/handover-evidence/`.
+
+| # | Item | Status | Evidence |
+|---|---|---|---|
+| Q1 | Fresh clone, `npm ci`, typecheck: frontend | ✅ exit 0 | `phase1-pos_fontend.txt` |
+| Q2 | Fresh clone, `npm ci`, typecheck: backend | ✅ exit 0 | `phase1-pos_backend.txt` |
+| Q3 | Lint (frontend; backend has no lint script) | ✅ / ⚠ no backend lint | `phase1-pos_fontend.txt` |
+| Q4 | Unit tests + coverage: backend 131/131, frontend all pass; backend stmts 57.24%, frontend `lib/domain` 95.54% (whole `src` far below 80%) | ⚠ coverage target not met | `phase1-*.txt` |
+| Q5 | `build:edge` (backend) and `next build` (frontend) | ✅ | `phase1-*.txt` |
+| Q6 | `fixtures.lock` identical between clone and working tree, golden tests pass both sides (frontend 1 golden file, backend 48/48) | ✅ `cmp` says the committed file (in the fresh clone) and the working-tree file are byte-identical in both repos. Separately, `git status` shows `tests/fixtures/domain/fixtures.lock` as modified in both working trees; cause not investigated (needs a look before committing) | `phase1-*.txt`, `phase1-pos_backend-golden.txt` |
+| Q7 | Backend integration vs real Postgres, migrations 001-006 fresh + re-run no-op | ✅ 18/18 (local PG 18.7; CI uses 16) / ⚠ not Supabase | `phase2-integration.txt` |
+| Q8 | Frontend E2E x3 (incl. critical-flows, qa-375) | ✅ 12 pass / 1 skip / 0 flaky per run | `phase2-e2e-run1..3.txt` |
+| Q9 | Real browser: signup, product+batch+expiry, search, cash/bKash split, % discount, credit sale, due collection, void, expiry page, offline sale -> sync once, second-device convergence | ✅ | `phase3-browser-qa.txt`, `screens/` |
+| Q10 | Hold / resume bills | ❌ not built | `phase3-browser-qa.txt` D-P3-4 |
+| Q11 | Backup -> wipe -> restore, scan, print, CSV import (manual) | 🔎 only automated mock E2E; static review found risks | `phase4-silent-failures.txt` #3, #7 |
+| Q12 | 375px and 1280px layout; Lighthouse on sale screen (A11y 100 / BP 100 / SEO 100) | ✅ | `phase3-browser-qa.txt`, `screens/lighthouse-sell-mobile/` |
+| Q13 | Expired batch can never be sold (UI + payment guard) | ✅ with caveats: phone-clock rollback defeats it (B2) | `phase3-browser-qa.txt`, `phase2-e2e-run*.txt` |
+| Q14 | Money is integer poisha end to end | ✅ (server event stores 30000 / 20050 / 10050; no float arithmetic found) | `phase3-browser-qa.txt`, `phase4-silent-failures.txt` |
+| Q15 | Tenant isolation: store B cannot read or write store A | ✅ runtime + 5 integration tests | `phase4-runtime-isolation-proof.txt`, `phase2-integration.txt` |
+| Q16 | Staff cannot void / see reports / manage staff | ✅ (UI + integration test) | `phase3-browser-qa.txt`, `phase4-runtime-isolation-proof.txt` |
+| Q17 | Staff cannot see cost price | ❌ leaks via sync pull and UI | `phase4-runtime-isolation-proof.txt`, `screens/p3-375-staff-sees-cost-price.png` |
+| Q18 | `npm audit --omit=dev` both repos | ✅ 0 vulnerabilities | `phase4-npm-audit.txt` |
+| Q19 | Secrets in full git history | ✅ none real found (pattern grep by agent; no gitleaks; CI literals must be confirmed test-only by owner) | `phase4-security-review.txt` |
+| Q20 | Auth / JWT / hashing / rate limit / RLS / CORS / CSP static review | ⚠ no CRITICAL; 2 HIGH, 7 MEDIUM | `phase4-security-review.txt` |
+| Q21 | Silent-failure review of money/data-loss paths | ❌ 7 HIGH findings | `phase4-silent-failures.txt` |
+| Q22 | PHI / patient data | ⚠ no clinical data stored today; Rx capture (PRD P-8) not built; encryption/audit/retention missing | `phase4-security-review.txt` |
+| Q23 | `/ecc:security-scan` on both `.claude` folders (config only, not app code) | ✅ A 100/100, 0 findings | `phase4-agentshield-claude-config.txt` |
+| Q24 | Live `/health` vs code | ❌ live is an older build | `phase5-live-health.txt` |
+| Q25 | CI: backend green on branch; frontend CI does not run on branch pushes; `deploy` job only on `main` and skips silently without `SUPABASE_ACCESS_TOKEN` | ⚠ | `phase5-ci-status.txt` |
+| Q26 | Branch based on current `main` | ❌ 5 / 12 commits behind | `phase5-ci-status.txt` |
+| Q27 | Migration rollback | ❌ no `down`; forward-fix or restore only (RUNBOOK 3) | backend `docs/RUNBOOK.md` |
+| Q28 | Restore drill on staging Supabase | 🔎 not possible here (no staging, no `pg_dump`, no credentials) | — |
+| Q29 | Monitoring / alerts / incident owner | ❌ none; RUNBOOK contact table empty | backend `docs/RUNBOOK.md` |
+| Q30 | ONBOARDING followed literally (`npm ci`, `db:migrate`, `npm start`, E2E) | ⚠ worked on a fresh clone; needs a local Postgres and a UTF-8 database (not stated: a non-UTF8 Postgres fails migrations with 22P05) | `phase2-integration*.txt` |
+| Q31 | Real Android/iOS, Bluetooth printer, Firefox/Safari, load | 🔎 not tested | — |
 
 ## আমার এই কাজের নিজস্ব সীমা (পাঠকের জানা দরকার)
 - সব পরীক্ষা একটি Windows কম্পিউটারে, Chromium-এ। কোনো আসল ফোন, Linux CI, আসল Supabase, বা আসল ব্যাকএন্ড-E2E ব্যবহার হয়নি।

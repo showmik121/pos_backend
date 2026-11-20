@@ -1,0 +1,23 @@
+# Phase 4 - Runtime tenant-isolation and staff-permission proof, 2026-11-20
+Target: LOCAL backend (fresh clone 43e68a1, real code) + LOCAL throwaway Postgres. Calls made with fetch() from the browser using each user's own session token (tokens not recorded).
+Store A: owner QA pharmacy with 1 product + sales. Store B: freshly registered other owner. Staff: user of store A.
+
+Owner A pulled /v1/sync/pull?after=0 -> 4 events then (product_upserted, stock_in, stock_in, sale_completed).
+RESULTS (raw JSON returned by the test script):
+{"createStaff":201,"staffLogin":200,
+ "staffPull":{"status":200,"events":4,"kinds":["product_upserted","stock_in","stock_in","sale_completed"],"containsCostPoisha":true},
+ "staffRestProductsCostHidden":true,
+ "storeB":201,
+ "storeB_pull":{"status":200,"events":0},
+ "storeB_products":0,
+ "storeB_readsAproduct":404,
+ "storeB_patchesAproduct":404,
+ "staffPushVoid":400}
+
+Interpretation
+ PASS  Tenant isolation: store B sees 0 of store A's sync events and 0 products; reading or PATCHing store A's product id returns 404.
+ PASS  Staff cost hidden over REST /v1/products.
+ FAIL  Staff cost price LEAKS through sync pull (containsCostPoisha=true) -> also visible in staff UI (screens/p3-375-staff-sees-cost-price.png). Confirms security H1 / KNOWN_LIMITATIONS B1.
+ NOTE  staffPushVoid=400: the push was rejected, but the 400 may come from my fake deviceId rather than the role check, so this probe alone does NOT prove the staff-void block.
+       The role rule is proven by integration test "সিংক: কর্মচারী sale_voided পাঠাতে পারে না, মালিক পারে" (tests/integration/pg.test.ts:105) which passed 18/18 in phase2-integration.txt, and by E2E critical-flows staff test.
+ Integration tests that cover isolation (all passed in phase2-integration.txt): RLS pull isolation (pg.test.ts:113), RLS direct SQL (:121), 006 same product id in two stores (:176), product API other-store 404 (:254), stock API other-store invisible/404 (:327).

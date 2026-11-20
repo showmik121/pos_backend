@@ -1,0 +1,61 @@
+# /ecc:security-scan (AgentShield, npx-backed, local) 2026-11-20T14:47:59+06:00 - scans Claude/agent config only, NOT app code
+
+== pos_fontend/.claude
+
+  AgentShield Security Report
+  2026-11-20T08:48:02.570Z
+  Target: C:\Users\Md Zahidul Islam\Documents\POS_SYSTEM\pos_fontend\.claude
+
+  Grade: A (100/100)
+
+  Score Breakdown
+  Secrets        ████████████████████ 100
+  Permissions    ████████████████████ 100
+  Hooks          ████████████████████ 100
+  MCP Servers    ████████████████████ 100
+  Agents         ████████████████████ 100
+
+  Harness Adapters
+  Matched: 1/9
+  Project-local Templates (partial)
+    Evidence: rules
+
+  Summary
+  Files scanned: 1
+  Findings: 0 total — 0 critical, 0 high, 0 medium, 0 low, 0 info
+
+  No security issues found!
+
+  ─────────────────────────────────────────
+  AgentShield — Security auditor for AI agent configs
+
+
+== pos_backend/.claude
+
+  AgentShield Security Report
+  2026-11-20T08:48:04.615Z
+  Target: C:\Users\Md Zahidul Islam\Documents\POS_SYSTEM\pos_backend\.claude
+
+  Grade: A (100/100)
+
+  Score Breakdown
+  Secrets        ████████████████████ 100
+  Permissions    ████████████████████ 100
+  Hooks          ████████████████████ 100
+  MCP Servers    ████████████████████ 100
+  Agents         ████████████████████ 100
+
+  Harness Adapters
+  Matched: 1/9
+  Project-local Templates (partial)
+    Evidence: rules
+
+  Summary
+  Files scanned: 1
+  Findings: 0 total — 0 critical, 0 high, 0 medium, 0 low, 0 info
+
+  No security issues found!
+
+  ─────────────────────────────────────────
+  AgentShield — Security auditor for AI agent configs
+

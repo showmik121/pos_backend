@@ -1,0 +1,156 @@
+# Phase 1 fresh-clone run 2026-11-20T14:28:15+06:00
+node v24.18.0 npm 11.16.0
+$ git clone <local pos_backend> -b chore/handover
+Cloning into 'C:/Users/MDZAHI~1/AppData/Local/Temp/claude/60cb05d7dbc4cace/2f17d7b1-dd5a-4f27-aea9-85d30a7af885/scratchpad/clones/pos_backend-142815'...
+done.
+HEAD=43e68a1
+
+$ npm ci
+
+added 60 packages, and audited 61 packages in 3s
+
+16 packages are looking for funding
+  run `npm fund` for details
+
+3 vulnerabilities (1 moderate, 2 critical)
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+npm warn allow-scripts 3 packages have install scripts not yet covered by allowScripts:
+npm warn allow-scripts   esbuild@0.25.12 (postinstall: node install.js)
+npm warn allow-scripts   esbuild@0.28.2 (postinstall: node install.js)
+npm warn allow-scripts   esbuild@0.28.2 (postinstall: node install.js)
+npm warn allow-scripts
+npm warn allow-scripts Run `npm approve-scripts --allow-scripts-pending` to review, or `npm approve-scripts <pkg>` to allow.
+exit=0
+
+$ npm run typecheck
+
+> pos-backend@0.2.0 typecheck
+> tsc --noEmit
+
+exit=0
+
+$ npm i --no-save @vitest/coverage-v8@^3.2.0
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+
+added 68 packages, and audited 129 packages in 7s
+
+32 packages are looking for funding
+  run `npm fund` for details
+
+7 vulnerabilities (5 moderate, 2 critical)
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+npm warn allow-scripts 3 packages have install scripts not yet covered by allowScripts:
+npm warn allow-scripts   esbuild@0.25.12 (install: (install scripts present))
+npm warn allow-scripts   esbuild@0.28.2 (install: (install scripts present))
+npm warn allow-scripts   esbuild@0.28.2 (install: (install scripts present))
+npm warn allow-scripts
+npm warn allow-scripts Run `npm approve-scripts --allow-scripts-pending` to review, or `npm approve-scripts <pkg>` to allow.
+exit=0
+
+$ npx vitest run --coverage tests/unit
+ [32m✓[39m tests/unit/throttle.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 6940[2mms[22m[39m
+   [33m[2m✓[22m[39m ডাটাবেস-ভিত্তিক হার-সীমা (মেমরি বাস্তবায়নে)[2m > [22m৫ ভুলের পর একই ফোন+IP আটকায়, কিন্তু অন্য IP থেকে আসল মালিক ঢুকতে পারে [33m 530[2mms[22m[39m
+   [33m[2m✓[22m[39m ডাটাবেস-ভিত্তিক হার-সীমা (মেমরি বাস্তবায়নে)[2m > [22mসফল লগইনে ফোন+IP এর গোনা শূন্য হয় [33m 768[2mms[22m[39m
+   [33m[2m✓[22m[39m ডাটাবেস-ভিত্তিক হার-সীমা (মেমরি বাস্তবায়নে)[2m > [22mএকই ফোনে ছড়ানো IP থেকে আক্রমণ: ফোন-প্রতি ওপরের সীমায় (৫০) থামে [33m 2712[2mms[22m[39m
+   [33m[2m✓[22m[39m ডাটাবেস-ভিত্তিক হার-সীমা (মেমরি বাস্তবায়নে)[2m > [22mএক IP থেকে নানা নম্বরে চেষ্টা: ৬০ বারের পর আটকায় [33m 2316[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m9 passed[39m[22m[90m (9)[39m
+[2m      Tests [22m [1m[32m131 passed[39m[22m[90m (131)[39m
+[2m   Start at [22m 14:28:33
+[2m   Duration [22m 8.58s[2m (transform 1.06s, setup 0ms, collect 3.66s, tests 18.02s, environment 3ms, prepare 2.50s)[22m
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   57.24 |    85.39 |   87.83 |   57.24 |                   
+ ...backend-142815 |       0 |        0 |       0 |       0 |                   
+  ...ion.config.ts |       0 |        0 |       0 |       0 | 1-10              
+ ...nd-142815/edge |       0 |        0 |       0 |       0 |                   
+  build.mjs        |       0 |        0 |       0 |       0 | 1-73              
+  entry.ts         |       0 |        0 |       0 |       0 | 1-21              
+ ...142815/scripts |       0 |        0 |       0 |       0 |                   
+  db-migrate.ts    |       0 |        0 |       0 |       0 | 1-50              
+ ...-142815/server |   82.88 |    89.21 |      88 |   82.88 |                   
+  app.ts           |   98.96 |    91.05 |   95.45 |   98.96 | 358-360           
+  config.ts        |       0 |        0 |       0 |       0 | 1-19              
+  http.ts          |     100 |       75 |     100 |     100 | 27,30-33          
+  index.ts         |       0 |        0 |       0 |       0 | 1-41              
+ .../server/routes |   95.37 |    86.73 |     100 |   95.37 |                   
+  products.ts      |     100 |    90.74 |     100 |     100 | 13,27-28          
+  stock.ts         |   91.48 |    81.81 |     100 |   91.48 | 36-37,42-45,53-54 
+ ...42815/src/auth |   98.67 |    83.05 |     100 |   98.67 |                   
+  ...-passwords.ts |     100 |      100 |     100 |     100 |                   
+  password.ts      |     100 |    81.57 |     100 |     100 | 13,23-24,31,37,49 
+  token.ts         |   95.23 |    85.71 |     100 |   95.23 | 57-58             
+ ...-142815/src/db |   28.91 |    87.93 |   86.53 |   28.91 |                   
+  catalog.ts       |       0 |        0 |       0 |       0 | 1-25              
+  ...ry-catalog.ts |     100 |    96.92 |   92.85 |     100 | 71-72             
+  memory-stock.ts  |     100 |    84.78 |     100 |     100 | 49,94-97,113      
+  memory.ts        |     100 |    87.93 |   95.23 |     100 | ...7,79,83,87,120 
+  pg-catalog.ts    |       0 |        0 |       0 |       0 | 1-208             
+  pg-stock.ts      |       0 |        0 |       0 |       0 | 1-218             
+  pg.ts            |       0 |        0 |       0 |       0 | 1-169             
+  stock.ts         |     100 |      100 |     100 |     100 |                   
+  types.ts         |       0 |        0 |       0 |       0 | 1-88              
+ ...815/src/domain |   95.96 |    82.37 |   93.47 |   95.96 |                   
+  cart.ts          |   97.29 |    94.44 |     100 |   97.29 | 48-49             
+  cursor.ts        |    93.1 |    86.36 |     100 |    93.1 | 24-25             
+  digits.ts        |   71.42 |      100 |      50 |   71.42 | 9-10              
+  errors.ts        |     100 |      100 |     100 |     100 |                   
+  expiry.ts        |    91.3 |    93.75 |     100 |    91.3 | 9-10              
+  fifo.ts          |     100 |    88.46 |     100 |     100 | 26,30             
+  money.ts         |      92 |       75 |     100 |      92 | 17-18             
+  phone.ts         |     100 |     87.5 |     100 |     100 | 6                 
+  product.ts       |   95.14 |    69.44 |   92.85 |   95.14 | 126-128,162-163   
+  stock.ts         |     100 |    78.84 |   88.88 |     100 | 62,68-77,90,92    
+  units.ts         |   90.47 |    88.88 |     100 |   90.47 | 24-25             
+ .../functions/api |       0 |        0 |       0 |       0 |                   
+  index.ts         |       0 |        0 |       0 |       0 | 1-27              
+-------------------|---------|----------|---------|---------|-------------------
+exit=0
+
+$ fixtures.lock compare (committed clone vs local working tree)
+IDENTICAL
+
+$ npx vitest run -t golden
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90mC:/Users/Md Zahidul Islam/AppData/Local/Temp/claude/60cb05d7dbc4cace/2f17d7b1-dd5a-4f27-aea9-85d30a7af885/scratchpad/clones/pos_backend-142815[39m
+
+ [2m[90m↓[39m[22m tests/unit/auth.test.ts [2m([22m[2m3 tests[22m[2m | [22m[33m3 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/unit/domain.test.ts [2m([22m[2m10 tests[22m[2m | [22m[33m10 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/unit/golden.test.ts [2m([22m[2m48 tests[22m[2m | [22m[33m48 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/unit/client-errors.test.ts [2m([22m[2m7 tests[22m[2m | [22m[33m7 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/unit/throttle.test.ts [2m([22m[2m9 tests[22m[2m | [22m[33m9 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/unit/products.test.ts [2m([22m[2m14 tests[22m[2m | [22m[33m14 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/unit/sync.test.ts [2m([22m[2m14 tests[22m[2m | [22m[33m14 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/unit/stock.test.ts [2m([22m[2m14 tests[22m[2m | [22m[33m14 skipped[39m[2m)[22m
+ [2m[90m↓[39m[22m tests/unit/api.test.ts [2m([22m[2m12 tests[22m[2m | [22m[33m12 skipped[39m[2m)[22m
+
+[2m Test Files [22m [33m9 skipped[39m[90m (9)[39m
+[2m      Tests [22m [33m131 skipped[39m[90m (131)[39m
+[2m   Start at [22m 14:28:44
+[2m   Duration [22m 1.32s[2m (transform 1.32s, setup 0ms, collect 4.07s, tests 0ms, environment 3ms, prepare 2.19s)[22m
+
+exit=0
+
+$ npm run build:edge
+
+> pos-backend@0.2.0 build:edge
+> node edge/build.mjs
+
+
+  supabase\functions\api\app.bundle.js  84.4kb
+
+Done in 42ms
+Built supabase/functions/api/app.bundle.js
+exit=0
+DONE

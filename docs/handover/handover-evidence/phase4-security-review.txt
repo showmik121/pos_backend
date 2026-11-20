@@ -1,0 +1,47 @@
+# Phase 4 - Security review (STATIC code reading by ecc:security-reviewer agent, 2026-11-20)
+Method: read code + grep git history (all branches, `git log --all -p`; backend 46 commits, frontend 116). Nothing was executed against a server; npm audit is in phase4-npm-audit.txt.
+Spot-checks by the QA lead are marked [VERIFIED]. Others are agent claims, not independently re-run. Line numbers in the agent's text may be a few lines off.
+
+## CRITICAL: none found
+
+## HIGH
+H1  Staff can read cost price via sync pull (confirms KNOWN_LIMITATIONS B1).
+    server/app.ts:251-259, src/db/pg.ts:149-165: pull returns raw `payload` for any authenticated user, no role filter.
+    REST path hides cost correctly (src/domain/product.ts:157-158). Staff GET /v1/sync/pull?after=0 returns product_upserted/stock_in with cost + owner events.
+H2  Sync event bodies not validated server-side (confirms B7).
+    server/app.ts:53-67 checks envelope only (id, kind, at, object payload, <=32KB). A staff token can push sale_completed/stock_in/due_received/product_upserted with arbitrary content
+    (zero-price sale, negative qty, back-dated `at`, fake due payment). All owner devices replay them.
+
+## MEDIUM
+M1  Customer name/phone/purchase history in plaintext localStorage and plaintext backup files; sync_events kept forever, no purge.
+M2  Audit trail partial: no read-access log, no staff create/deactivate log, no login history; auth_attempts purged after 1 day; no customer erase path.
+M3  JWT in localStorage, no jti/iss/aud, 12h TTL, not revoked on logout, no password-change/reset endpoint (B8). Mitigated: role/active re-read from DB per request (src/app.ts:170-177).
+M4  Registration has no OTP; `phone_taken` 409 allows phone enumeration and pre-registration takeover (B3). server/app.ts:190-204.
+M5  Login throttle: clientIp trusts cf-connecting-ip / x-real-ip / x-forwarded-for (server/app.ts:97-102) -> spoofable on plain Node server; floor is 50/phone/15min.
+    Also attacker can lock a victim out (50 failures) and CGNAT shops share LOGIN_IP (60/15min) (B4/B5).
+M6  CSP: script-src 'unsafe-inline', connect-src https://*.supabase.co (public/_headers:3) -> pin to the exact project ref (B6). No innerHTML/dangerouslySetInnerHTML/eval found.
+M7  sync_events has no quota/expiry; 100 events/push x 600 req/min/store x 32KB cap -> one cheap account can fill the DB disk for all tenants (A6).
+
+## LOW
+L1 supabase/functions/api/index.ts:19-22 returns BOOT_ERROR message in response body (leaks import paths).
+L2 client_errors stores stack/IP/UA 30 days; server only truncates (client scrubs 6+ digit runs).
+L3 scrypt N=16384 (low end), verifyPassword trusts N/r/p from stored hash, no pepper.
+L4 Staff can PATCH products incl. costPoisha/prices over REST (server/routes/products.ts:74-77, product.ts:114).
+L5 CORS OK (no wildcard). L6 GitHub Actions not SHA-pinned (B9). L7 SW caches same-origin GET only (no PHI in Cache Storage).
+L8 Live Supabase project ref committed (supabase-project-id.txt, frontend .env.example): not a secret.
+
+## Healthcare / PHI (ecc:healthcare-phi-compliance)
+No prescription/patient/diagnosis code exists in src (grep). App stores customer name+phone, sales, dues = PII, not clinical PHI.
+PRD P0 P-8 (Rx capture: doctor, patient, photo) is NOT built; when built it needs: field-level encryption at rest (today plaintext localStorage),
+per-user read-audit log, retention/deletion policy, consent record, encrypted server backups, restricted roles (pharmacist).
+
+## Git-history secrets
+Only placeholders / CI throwaway values found: CI workflow literals (POSTGRES_PASSWORD, POS_APP_PASSWORD, JWT_SECRET for the CI job), .env.example templates with PROJECT_REF placeholders.
+No real .env/.pem/.key/service-role/sbp_/ghp_/AKIA/full-JWT found. Agent did NOT diff CI literals against production secrets -> owner must confirm they are test-only. (gitleaks not installed.)
+
+## Verified correct (static)
+scrypt N=16384 r=8 p=1, 16B salt, timingSafeEqual, dummy hash for timing (src/auth/password.ts:100-124); JWT HS256 pinned, exp checked, secret>=32 chars, role re-read from DB (token.ts:22-53, app.ts:170-178);
+RLS tenant_isolation on all business tables via app_store_id() set per transaction (001_init.sql:186-208, 004_sync.sql:165-168, pg.ts:33-39); pos_app NOSUPERUSER NOBYPASSRLS, no DELETE, column-limited grants, append-only ledgers (001:9-13, 002);
+push/pull inside withStore, composite FKs, ON CONFLICT (store_id,id) (pg.ts:134-165, 004:160-161); staff whitelist SYNC_STAFF_KINDS (app.ts:41,244-246); owner-only void/remove-batch/settings (app.ts, routes/stock.ts:182,192);
+REST cost hidden for staff (products.ts, stock.ts); DB-backed atomic rate limiting (002:87-107); parameterised SQL everywhere; generic 500/401 bodies; exact-origin CORS; security headers (public/_headers:3-10).
+NOTE: "tenant isolation proven by integration tests" is NOT proven in this run - integration tests need Postgres (see phase2-integration.txt).

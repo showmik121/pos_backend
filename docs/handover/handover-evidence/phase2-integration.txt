@@ -1,0 +1,48 @@
+# Phase 2 backend integration vs LOCAL throwaway embedded Postgres (UTF8) 2026-11-20T14:33:38+06:00 (credentials redacted; NOT the live DB)
+# Postgres server: PostgreSQL 18.7 on x86_64-windows, compiled by msvc-19.44.35229, 64-bit UTF8
+# NOTE: CI uses postgres:16; this is the embedded-postgres package version above. Attempt 1 (WIN1252 encoding) failed: see phase2-integration-attempt1-encoding-WIN1252.txt
+$ npm run db:migrate   (fresh DB)
+
+> pos-backend@0.2.0 db:migrate
+> tsx scripts/db-migrate.ts
+
+চালাচ্ছি: 001_init.sql
+চালাচ্ছি: 002_hardening.sql
+চালাচ্ছি: 003_integrity_indexes.sql
+চালাচ্ছি: 004_sync.sql
+চালাচ্ছি: 005_client_errors.sql
+চালাচ্ছি: 006_catalog_stock.sql
+pos_app এর পাসওয়ার্ড বসানো হয়েছে
+মাইগ্রেশন শেষ
+exit=0
+$ npm run db:migrate   (2nd run, must be a no-op)
+
+> pos-backend@0.2.0 db:migrate
+> tsx scripts/db-migrate.ts
+
+pos_app এর পাসওয়ার্ড বসানো হয়েছে
+মাইগ্রেশন শেষ
+exit=0
+$ npm run test:integration
+
+> pos-backend@0.2.0 test:integration
+> vitest run --config vitest.integration.config.ts
+
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90mC:/Users/Md Zahidul Islam/AppData/Local/Temp/claude/60cb05d7dbc4cace/2f17d7b1-dd5a-4f27-aea9-85d30a7af885/scratchpad/clones/pos_backend-142815[39m
+
+ [32m✓[39m tests/integration/pg.test.ts [2m([22m[2m18 tests[22m[2m)[22m[33m 5921[2mms[22m[39m
+   [33m[2m✓[22m[39m PostgreSQL: আসল ডাটাবেসে[2m > [22mসিংক: একসাথে অনেক push করলেও seq ক্রমে থাকে ও কিছু হারায় না [33m 321[2mms[22m[39m
+   [33m[2m✓[22m[39m PostgreSQL: আসল ডাটাবেসে[2m > [22mRLS (সরাসরি SQL): দোকান ঠিক না করলে কিছু দেখা যায় না; অন্য দোকানের সারি ঢোকানো যায় না [33m 322[2mms[22m[39m
+   [33m[2m✓[22m[39m PostgreSQL: আসল ডাটাবেসে[2m > [22mপণ্য API: তৈরি, ইডেমপোটেন্ট, সমান্তরাল একই id, ভিন্ন বডিতে ৪০৯, বারকোড সংঘাত [33m 351[2mms[22m[39m
+   [33m[2m✓[22m[39m PostgreSQL: আসল ডাটাবেসে[2m > [22mপণ্য API: দুই দোকানে একই id ও একই বারকোড আলাদা; অন্যের পণ্য ৪০৪; কর্মচারীর কাছে ক্রয়মূল্য null [33m 893[2mms[22m[39m
+   [33m[2m✓[22m[39m PostgreSQL: আসল ডাটাবেসে[2m > [22mপণ্য API: তালিকা পেজিনেশন (প্রতিটি একবার), খোঁজা, PATCH ও stale [33m 593[2mms[22m[39m
+   [33m[2m✓[22m[39m PostgreSQL: আসল ডাটাবেসে[2m > [22mস্টক API: জমা, একই ব্যাচে মেশা, ইডেমপোটেন্ট রসিদ, সমান্তরাল জমায় কিছু হারায় না [33m 593[2mms[22m[39m
+   [33m[2m✓[22m[39m PostgreSQL: আসল ডাটাবেসে[2m > [22mস্টক API: ব্যাচ পেজিনেশন, status ফিল্টার, সরানো (শুধু মালিক), ক্ষতির খাতা, অন্য দোকানে অদৃশ্য [33m 1026[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m18 passed[39m[22m[90m (18)[39m
+[2m   Start at [22m 14:33:41
+[2m   Duration [22m 6.55s[2m (transform 188ms, setup 0ms, collect 293ms, tests 5.92s, environment 0ms, prepare 97ms)[22m
+
+exit=0
