@@ -89,3 +89,10 @@ Node >= 20.12। লকফাইল নেই (`npm install` ব্যবহা�
 - `GET /v1/batches?productId&status=active|expired|expiring&expiringWithinDays&limit&cursor`: মেয়াদের ক্রমে (মেয়াদহীন শেষে), keyset কার্সর; `expiryClass`/`daysLeft` ঢাকার আজকের তারিখে; স্টাফের কাছে `costPoisha` null।
 - `POST /v1/batches/{id}/removals` ও `GET /v1/batch-removals` শুধু মালিক; কারণ বাধ্যতামূলক (৪২২ `reason_required`); সরানো ব্যাচে স্টক শূন্য ও তালিকা-বহির্ভূত; ক্ষতি = পরিমাণ × ক্রয়মূল্য।
 - একই (দোকান, পণ্য)-র স্টক-বদল `pg_advisory_xact_lock` দিয়ে এক এক করে চলে (FIFO বিক্রির সময়ও একই লক)।
+
+## REST: কাস্টমার ও বাকির খাতা
+- `POST /v1/customers` `{id, name, phone?}` (ফোন বাংলা/ইংরেজি অঙ্কে, `01XXXXXXXXX` আকারে সংরক্ষিত; ফোন না থাকলে `""`): ২০১ / একই বডি ২০০ / ভিন্ন বডিতে ৪০৯ `id_conflict` / একই ফোনে অন্য কাস্টমার ৪০৯ `duplicate_phone`। `GET /v1/customers?q&limit&cursor` (নামের ক্রমে), `GET /v1/customers/{id}`; সবখানে `balancePoisha`।
+- `POST /v1/customers/{id}/payments` `{id, amount, method?}` (cash|bkash|nagad|rocket, ডিফল্ট cash; স্টাফও পারে): বাকির চেয়ে বেশি হলে ৪০৯ `overpay`; একই id আবার ২০০। কাস্টমার-সারি `FOR UPDATE` লক করে ব্যালান্স পড়া হয়, তাই সমান্তরাল আদায়ে ব্যালান্স ঋণাত্মক হয় না।
+- `POST /v1/customers/{id}/opening-balances` `{id, amount}` শুধু মালিক।
+- `GET /v1/customers/{id}/ledger` (নতুন আগে, কার্সর) ও `GET /v1/dues` (বাকি > ০, বেশি বাকি আগে, `totalDuePoisha` পুরো দোকানের)।
+- খাতা `due_ledger`-এ চিহ্নযুক্ত পরিমাণ (বাকি বাড়লে +, কমলে −), kind: sale/opening/payment/void; API-তে `amountPoisha` সবসময় ধনাত্মক। বিলপ্রতি একটিই sale ও একটিই void এন্ট্রি (ইউনিক ইনডেক্স)। মাইগ্রেশন ০০৭ হাতে প্রয়োগের আগে `pg_dump`।
