@@ -33,6 +33,13 @@ const checks = [
   ["GET", "/api/v1/staff", undefined, 401],
   ["POST", "/api/v1/auth/login", post({ phone: "123", password: "x" }), 400], // ভুল ফোন, ডাটাবেস লাগে না
   ["GET", "/api/does-not-exist", undefined, 404],
+  // Admin routes must be IN the bundle (PRD §17.6). The CI job sets placeholder ADMIN_* env, so the feature gate is open:
+  // a route that exists answers 401 (no token) / 400 (bad body); a missing route would answer 404.
+  ["GET", "/api/v1/admin/me", undefined, 401],
+  ["GET", "/api/v1/admin/admins", undefined, 401],
+  ["POST", "/api/v1/admin/auth/login", post({ email: "not-an-email", password: "x" }), 400],
+  ["POST", "/api/v1/admin/auth/2fa", post({ code: "123456" }), 401],
+  ["GET", "/api/v1/admin/does-not-exist", undefined, 404],
 ]
 
 let failed = 0

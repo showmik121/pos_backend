@@ -57,6 +57,10 @@ jobs:
       DATABASE_URL_UNPOOLED: postgres://postgres:ci-admin-password@localhost:5432/pos
       POS_APP_PASSWORD: ci-pos-app-password-1234
       INTEGRATION_DATABASE_URL: postgres://pos_app:ci-pos-app-password-1234@localhost:5432/pos
+      # Admin panel (migration 012): same throwaway-database rule; none of these are real credentials.
+      ADMIN_APP_PASSWORD: ci-admin-app-password-1234
+      INTEGRATION_ADMIN_DATABASE_URL: postgres://admin_app:ci-admin-app-password-1234@localhost:5432/pos
+      INTEGRATION_SUPERUSER_URL: postgres://postgres:ci-admin-password@localhost:5432/pos
     steps:
       - uses: actions/checkout@v4
 
@@ -84,6 +88,10 @@ jobs:
       # প্লেসহোল্ডার: এই যাচাই ডাটাবেস ছোঁয় না।
       DATABASE_URL: postgres://ci:ci@localhost:5432/ci
       JWT_SECRET: ci-only-jwt-secret-not-used-anywhere-else
+      # Placeholders that open the admin feature gate so the smoke test proves the admin routes are in the bundle (§17.6).
+      ADMIN_JWT_SECRET: ci-only-admin-jwt-secret-not-used-anywhere
+      ADMIN_DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+      ADMIN_TOTP_ENC_KEY: Y2ktb25seS1hZG1pbi10b3RwLWtleS0zMmJ5dGVzISE=
     steps:
       - uses: actions/checkout@v4
 

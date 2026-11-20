@@ -4,10 +4,18 @@ import { createMemoryCatalog } from "./memory-catalog.js"
 import { createMemoryDues } from "./memory-dues.js"
 import { createMemorySales } from "./memory-sales.js"
 import { createMemoryStock } from "./memory-stock.js"
-import type { ClientErrorReport, NewSyncEvent, PublicUser, Repo, Store, SyncEvent, UserWithHash } from "./types.js"
+import type { AuthUser, ClientErrorReport, NewSyncEvent, PublicUser, Repo, Store, StoreStatus, SyncEvent, UserWithHash } from "./types.js"
+
+const TRIAL_DAYS = 14
 
 // টেস্ট ও লোকাল ডেমোর জন্য ইন-মেমরি রিপোজিটরি। pg.ts এর সঙ্গে একই ইন্টারফেস।
-export function createMemoryRepo(opts: { now?: () => number } = {}): Repo & { peekClientErrors(): Array<ClientErrorReport & { count: number }> } {
+export function createMemoryRepo(
+  opts: { now?: () => number } = {},
+): Repo & {
+  peekClientErrors(): Array<ClientErrorReport & { count: number }>
+  /** Test hook: the admin panel's suspend/read-only endpoints (A1) do this through SECURITY DEFINER functions in pg. */
+  setStoreStatus(storeId: string, status: StoreStatus, message?: string | null): void
+} {
   const now = opts.now ?? (() => Date.now())
   const catalog = createMemoryCatalog(now)
   const attempts = new Map<string, number[]>()
@@ -42,7 +50,14 @@ export function createMemoryRepo(opts: { now?: () => number } = {}): Repo & { pe
       if (phoneTaken(phone)) throw taken()
       const storeId = randomUUID()
       const userId = randomUUID()
-      stores.set(storeId, { id: storeId, name: storeName, kind: storeKind })
+      stores.set(storeId, {
+        id: storeId,
+        name: storeName,
+        kind: storeKind,
+        status: "trial",
+        statusMessage: null,
+        trialEndsAt: new Date(now() + TRIAL_DAYS * 86_400_000).toISOString(),
+      })
       users.set(userId, { id: userId, storeId, name: ownerName, phone, passwordHash, role: "owner", active: true })
       return { storeId, userId }
     },
@@ -80,9 +95,16 @@ export function createMemoryRepo(opts: { now?: () => number } = {}): Repo & { pe
       return [...users.values()].find((u) => u.phone === phone) ?? null
     },
 
-    async getUser(storeId, userId) {
+    async getUser(storeId, userId): Promise<AuthUser | null> {
       const u = users.get(userId)
-      return u && u.storeId === storeId ? publicUser(u) : null
+      const s = stores.get(storeId)
+      return u && s && u.storeId === storeId ? { ...publicUser(u), storeStatus: s.status } : null
+    },
+
+    setStoreStatus(storeId, status, message = null) {
+      const s = stores.get(storeId)
+      if (!s) throw new Error("no such store")
+      stores.set(storeId, { ...s, status, statusMessage: message })
     },
 
     async getStore(storeId) {

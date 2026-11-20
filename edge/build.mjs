@@ -70,4 +70,15 @@ await build({
   process.exit(1)
 })
 
-console.log("Built supabase/functions/api/app.bundle.js")
+// The bundle must contain the admin routes and the tenant enforcement (PRD §17.6): a build that silently dropped them
+// would deploy a shop API without suspension enforcement or an admin panel that 404s. Fail the build instead.
+const { readFile } = await import("node:fs/promises")
+const bundle = await readFile(path.join(root, "supabase/functions/api/app.bundle.js"), "utf8")
+const required = ["/v1/admin/", "/auth/login", "/auth/2fa/enroll-confirm", "/admins/:id/reset-2fa", "admin.reset_2fa", "tenant_suspended", "tenant_read_only", "pending_deletion"]
+const missing = required.filter((marker) => !bundle.includes(marker))
+if (missing.length) {
+  report(`Bundle is missing admin/enforcement code: ${missing.join(", ")}`)
+  process.exit(1)
+}
+
+console.log("Built supabase/functions/api/app.bundle.js (admin routes and tenant enforcement present)")

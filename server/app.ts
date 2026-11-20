@@ -2,6 +2,12 @@ import { DomainError } from "../src/domain/errors.js"
 import { normalizePhone } from "../src/domain/phone.js"
 import { hashPassword, verifyPassword, dummyHash } from "../src/auth/password.js"
 import { signToken, verifyToken, assertSecret } from "../src/auth/token.js"
+import { tenantBlockFor } from "../src/domain/tenant-status.js"
+import { randomUUID } from "node:crypto"
+import { assertAdminSecret } from "../src/auth/admin-token.js"
+import { assertEncKey } from "../src/auth/admin-crypto.js"
+import type { AdminRepo } from "../src/db/admin.js"
+import { adminRoute } from "./routes/admin.js"
 import { readJson, UUID as UUID_PART, type Result, type RouteCtx } from "./http.js"
 import { duesRoutes } from "./routes/dues.js"
 import { productRoutes } from "./routes/products.js"
@@ -16,6 +22,16 @@ const STATUS: Record<string, number> = {
   invalid_credentials: 401,
   unauthorized: 401,
   forbidden: 403,
+  // 403 on purpose, same as `forbidden`: the shop sync engine keeps its queue on 403 but drops events on 400/413 (PRD §17.4)
+  tenant_suspended: 403,
+  tenant_read_only: 403,
+  // admin panel (/v1/admin)
+  step_up_required: 403,
+  enrollment_required: 403,
+  invalid_code: 401,
+  email_taken: 409,
+  last_super_admin: 409,
+  already_enrolled: 409,
   not_found: 404,
   phone_taken: 409,
   id_conflict: 409,
@@ -127,6 +143,11 @@ export interface AppOptions {
   now?: () => number
   /** স্বাস্থ্য-পরীক্ষায় ডেটাবেসের জন্য অপেক্ষা (মিলিসেকেন্ড); টেস্টে ছোট করা যায় */
   healthTimeoutMs?: number
+  /**
+   * Admin panel API (/v1/admin). Feature-gated: when omitted, /v1/admin/* is a plain 404, so merging this code before the
+   * admin secrets exist cannot break the shop API. Own secret + own token audience; never the shop JWT_SECRET.
+   */
+  admin?: { repo: AdminRepo; jwtSecret: string; totpEncKey: string; issuer?: string }
 }
 
 export interface App {
@@ -134,8 +155,14 @@ export interface App {
 }
 
 export function createApp(opts: AppOptions): App {
-  const { repo, jwtSecret, ttlSeconds = 43_200, corsOrigins = [], now = () => Date.now(), healthTimeoutMs = HEALTH_TIMEOUT_MS } = opts
+  const { repo, jwtSecret, ttlSeconds = 43_200, corsOrigins = [], now = () => Date.now(), healthTimeoutMs = HEALTH_TIMEOUT_MS, admin } = opts
   assertSecret(jwtSecret)
+  if (admin) {
+    assertAdminSecret(admin.jwtSecret)
+    assertEncKey(admin.totpEncKey)
+    // distinct secrets: a leak or misconfiguration of one must not unlock the other surface
+    if (admin.jwtSecret === jwtSecret) throw new Error("ADMIN_JWT_SECRET must differ from JWT_SECRET")
+  }
 
   // স্বাস্থ্য-পরীক্ষা: ডেটাবেস পিং, ছোট ক্যাশসহ (বারবার ডাকলে ডেটাবেসে চাপ পড়ে না)
   let healthCache: { at: number; result: Result } | null = null
@@ -174,13 +201,24 @@ export function createApp(opts: AppOptions): App {
   }
   const tooMany = () => new DomainError("too_many_attempts", "অনেকবার চেষ্টা হয়েছে, কিছুক্ষণ পরে আবার চেষ্টা করুন")
 
-  async function authenticate(req: Request): Promise<PublicUser> {
+  // allowRestricted: only GET /v1/me and crash reports skip the tenant-status check (the app must be able to show the notice)
+  async function authenticate(req: Request, opts: { allowRestricted?: boolean } = {}): Promise<PublicUser> {
     const header = req.headers.get("authorization") ?? ""
     const claims = header.startsWith("Bearer ") ? verifyToken(header.slice(7), jwtSecret, { now: now() }) : null
     if (!claims) throw new DomainError("unauthorized", "আবার লগইন করুন")
     // টোকেন বৈধ থাকলেও ইউজার নিষ্ক্রিয় করা হয়ে থাকতে পারে — তাই প্রতিবার যাচাই
-    const user = await repo.getUser(claims.sid, claims.sub)
-    if (!user || !user.active) throw new DomainError("unauthorized", "আবার লগইন করুন")
+    const found = await repo.getUser(claims.sid, claims.sub)
+    if (!found || !found.active) throw new DomainError("unauthorized", "আবার লগইন করুন")
+    const { storeStatus, ...user } = found // the status never leaks into routes or responses
+    if (!opts.allowRestricted) {
+      const path = new URL(req.url).pathname.replace(/\/+$/, "").replace(/^\/api/, "") || "/"
+      const block = tenantBlockFor(storeStatus, req.method, path)
+      if (block) {
+        // operator's message for the owner (set when the status was changed); read only on the blocked path
+        const store = await repo.getStore(user.storeId)
+        throw new DomainError(block.code, block.message, { status: storeStatus, message: store?.statusMessage ?? null })
+      }
+    }
     return user
   }
 
@@ -192,6 +230,25 @@ export function createApp(opts: AppOptions): App {
     const key = `${req.method} ${path}`
 
     if (key === "GET /health") return health()
+
+    // Platform admin panel: own auth, own DB role, own audit trail (server/routes/admin.ts). 404 unless configured.
+    if (path.startsWith("/v1/admin/")) {
+      if (!admin) throw new DomainError("not_found", "পাওয়া যায়নি")
+      return adminRoute({
+        req,
+        path: path.slice("/v1/admin".length),
+        requestId: randomUUID(),
+        ctx: {
+          repo: admin.repo,
+          jwtSecret: admin.jwtSecret,
+          totpEncKey: admin.totpEncKey,
+          issuer: admin.issuer ?? "Bipone Admin",
+          now,
+          ip: clientIp(req),
+          ua: req.headers.get("user-agent")?.slice(0, 300) ?? null,
+        },
+      })
+    }
 
     // A1: দোকান খোলা + মালিকের অ্যাকাউন্ট
     if (key === "POST /v1/auth/register-store") {
@@ -225,11 +282,17 @@ export function createApp(opts: AppOptions): App {
       }
       await repo.throttleReset(pair)
       const { passwordHash: _omit, ...user } = found
-      return { status: 200, body: { token: tokenFor(user), user } }
+      // Login always succeeds for a valid account, even when suspended, so the owner can read the notice (PRD §8.1, Q10).
+      // Data routes are what return 403 tenant_suspended; there is no server-side export for a suspended shop (ADR 0003).
+      const store = await repo.getStore(user.storeId)
+      // never default to "active": a store row we cannot read must not be reported to the app as healthy
+      // (a plain Error on purpose: it takes the logged HTTP 500 path; a DomainError("internal") would go out as 400 and unlogged)
+      if (!store) throw new Error(`login: store row not found for user ${user.id}`)
+      return { status: 200, body: { token: tokenFor(user), user, tenantStatus: store.status, statusMessage: store.statusMessage ?? null } }
     }
 
     if (key === "GET /v1/me") {
-      const user = await authenticate(req)
+      const user = await authenticate(req, { allowRestricted: true })
       const store = await repo.getStore(user.storeId)
       return { status: 200, body: { user, store } }
     }
@@ -283,7 +346,11 @@ export function createApp(opts: AppOptions): App {
       if (!(await withinLimits(checks))) throw tooMany()
       const b = await readJson(req, CLIENT_ERROR_MAX_BODY)
       // টোকেন থাকলে দোকান জানি, না থাকলে বা অচল হলেও রিপোর্ট নিই
-      const storeId = await authenticate(req).then((u) => u.storeId, () => null)
+      // only a bad/missing token is ignored; a database outage must not silently turn into an anonymous report
+      const storeId = await authenticate(req, { allowRestricted: true }).then((u) => u.storeId, (e: unknown) => {
+        if (e instanceof DomainError && e.code === "unauthorized") return null
+        throw e
+      })
       await repo.recordClientError(parseClientError(b, storeId, req.headers.get("user-agent")))
       return { status: 200, body: { ok: true } }
     }

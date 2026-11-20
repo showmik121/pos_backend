@@ -50,6 +50,9 @@ export function verifyToken(token: unknown, secret: string, opts: { now?: number
   if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null
   try {
     const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as Claims
+    // Admin tokens (src/auth/admin-token.ts) always carry `aud`; shop tokens never do. Refusing any token
+    // with an audience means an admin token can never act as a shop token, even if secrets were ever equal.
+    if ((claims as { aud?: unknown }).aud !== undefined) return null
     if (typeof claims.exp !== "number" || claims.exp <= Math.floor(now / 1000)) return null
     if (typeof claims.sub !== "string" || typeof claims.sid !== "string") return null
     return claims

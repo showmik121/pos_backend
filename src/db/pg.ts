@@ -6,7 +6,7 @@ import { createPgProjection } from "./pg-projection.js"
 import { createPgSales } from "./pg-sales.js"
 import { createPgStock } from "./pg-stock.js"
 import type { ProjectionRepo } from "./projection.js"
-import type { NewSyncEvent, PublicUser, Repo, Store, SyncEvent, UserWithHash } from "./types.js"
+import type { AuthUser, NewSyncEvent, PublicUser, Repo, Store, StoreStatus, SyncEvent, UserWithHash } from "./types.js"
 
 // PostgreSQL (Supabase) রিপোজিটরি।
 // - Supabase এর Transaction pooler (পোর্ট 6543) এর জন্য prepare:false লাগে।
@@ -18,6 +18,16 @@ import type { NewSyncEvent, PublicUser, Repo, Store, SyncEvent, UserWithHash } f
 const UNIQUE_VIOLATION = "23505"
 
 type Tx = postgres.TransactionSql
+
+interface StoreRow {
+  id: string
+  name: string
+  kind: Store["kind"]
+  status: StoreStatus
+  statusMessage: string | null
+  trialEndsAt: Date | string | null
+}
+const toStore = (r: StoreRow): Store => ({ ...r, trialEndsAt: r.trialEndsAt ? new Date(r.trialEndsAt).toISOString() : null })
 
 function mapError(err: unknown): unknown {
   if ((err as { code?: string } | null)?.code === UNIQUE_VIOLATION) {
@@ -69,21 +79,27 @@ export function createPgRepo(opts: { connectionString: string; max?: number }): 
 
     getUser: (storeId, userId) =>
       withStore(storeId, async (tx) => {
-        const rows = await tx<PublicUser[]>`
-          SELECT id, store_id AS "storeId", name, phone, role, active FROM users WHERE id = ${userId}`
+        // One round trip: the store status rides along so authenticate() can enforce it on every request (§17.4)
+        const rows = await tx<AuthUser[]>`
+          SELECT u.id, u.store_id AS "storeId", u.name, u.phone, u.role, u.active, s.status AS "storeStatus"
+          FROM users u JOIN stores s ON s.id = u.store_id WHERE u.id = ${userId}`
         return rows[0] ?? null
       }),
 
     getStore: (storeId) =>
       withStore(storeId, async (tx) => {
-        const rows = await tx<Store[]>`SELECT id, name, kind FROM stores WHERE id = ${storeId}`
-        return rows[0] ?? null
+        const rows = await tx<StoreRow[]>`
+          SELECT id, name, kind, status, status_message AS "statusMessage", trial_ends_at AS "trialEndsAt"
+          FROM stores WHERE id = ${storeId}`
+        return rows[0] ? toStore(rows[0]) : null
       }),
 
     renameStore: (storeId, name) =>
       withStore(storeId, async (tx) => {
-        const rows = await tx<Store[]>`UPDATE stores SET name = ${name} WHERE id = ${storeId} RETURNING id, name, kind`
-        return rows[0] ?? null
+        const rows = await tx<StoreRow[]>`
+          UPDATE stores SET name = ${name} WHERE id = ${storeId}
+          RETURNING id, name, kind, status, status_message AS "statusMessage", trial_ends_at AS "trialEndsAt"`
+        return rows[0] ? toStore(rows[0]) : null
       }),
 
     createStaff: (storeId, { name, phone, passwordHash }) =>

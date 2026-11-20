@@ -32,7 +32,8 @@ try {
     if (done.has(f)) continue
     console.log(`চালাচ্ছি: ${f}`)
     await sql.unsafe(await readFile(path.join(dir, f), "utf8")) // ফাইলের ভেতরে BEGIN/COMMIT আছে
-    await sql`INSERT INTO schema_migrations (name) VALUES (${f})`
+    // ON CONFLICT: 012 records itself inside its own transaction (so a crash or a by-hand run cannot leave it applied but unrecorded)
+    await sql`INSERT INTO schema_migrations (name) VALUES (${f}) ON CONFLICT (name) DO NOTHING`
   }
 
   if (appPassword) {
@@ -43,6 +44,19 @@ try {
     console.log("pos_app এর পাসওয়ার্ড বসানো হয়েছে")
   } else {
     console.log("সতর্কতা: POS_APP_PASSWORD সেট নেই — pos_app দিয়ে লগইন করতে পাসওয়ার্ড বসাতে হবে")
+  }
+  // admin_app (migration 012): same rule. Only set when the role exists, i.e. after 012 has run.
+  const adminPassword = process.env.ADMIN_APP_PASSWORD
+  const [adminRole] = await sql`SELECT 1 AS ok FROM pg_roles WHERE rolname = 'admin_app'`
+  if (adminRole) {
+    if (adminPassword) {
+      if (adminPassword.length < 16) throw new Error("ADMIN_APP_PASSWORD কমপক্ষে ১৬ অক্ষরের হতে হবে")
+      const quotedAdmin = "'" + adminPassword.replace(/'/g, "''") + "'"
+      await sql.unsafe(`ALTER ROLE admin_app WITH LOGIN PASSWORD ${quotedAdmin}`)
+      console.log("admin_app এর পাসওয়ার্ড বসানো হয়েছে")
+    } else {
+      console.log("সতর্কতা: ADMIN_APP_PASSWORD সেট নেই — admin_app দিয়ে লগইন করতে পাসওয়ার্ড বসাতে হবে")
+    }
   }
   console.log("মাইগ্রেশন শেষ")
 } finally {

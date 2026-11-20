@@ -7,7 +7,8 @@ const SECRET = "k".repeat(40)
 const PASS = "Sobuj#Ghar2026"
 
 export function start(now: () => number = () => NOW) {
-  const app = createApp({ repo: createMemoryRepo({ now }), jwtSecret: SECRET, now })
+  const repo = createMemoryRepo({ now })
+  const app = createApp({ repo, jwtSecret: SECRET, now })
   async function call(method: string, path: string, opts: { body?: unknown; token?: string } = {}) {
     const res = await app.fetch(
       new Request(`https://edge.test/api${path}`, {
@@ -26,7 +27,7 @@ export function start(now: () => number = () => NOW) {
     const login = await call("POST", "/v1/auth/login", { body: { phone: staff.json.user.phone, password: "staffpass1" } })
     return { owner: r.json.token as string, staff: login.json.token as string }
   }
-  return { call, shop }
+  return { call, shop, repo }
 }
 
 let n = 0

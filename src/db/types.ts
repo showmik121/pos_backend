@@ -19,10 +19,22 @@ export interface UserWithHash extends PublicUser {
   passwordHash: string
 }
 
+// Billing / enforcement state (PRD §8.2, migration 012). The shop API enforces it on every request (server/app.ts).
+export type StoreStatus = "trial" | "active" | "grace" | "read_only" | "suspended" | "pending_deletion" | "deleted" | "cancelled"
+
 export interface Store {
   id: string
   name: string
   kind: StoreKind
+  status: StoreStatus
+  /** Shown to the owner by the shop app (Bangla), set by the operator when changing the status. */
+  statusMessage: string | null
+  trialEndsAt: string | null
+}
+
+/** What authenticate() reads per request; the status is stripped before it reaches routes or responses. */
+export interface AuthUser extends PublicUser {
+  storeStatus: StoreStatus
 }
 
 export interface NewSyncEvent {
@@ -66,7 +78,7 @@ export interface Repo extends CatalogRepo, StockRepo, DuesRepo, SalesRepo {
   /** লগইনের জন্য: দোকান জানার আগে ফোন দিয়ে ইউজার খোঁজা (পাসওয়ার্ড হ্যাশসহ)। */
   findUserByPhone(phone: string): Promise<UserWithHash | null>
 
-  getUser(storeId: string, userId: string): Promise<PublicUser | null>
+  getUser(storeId: string, userId: string): Promise<AuthUser | null>
   getStore(storeId: string): Promise<Store | null>
   /** দোকানের নাম বদলায় (শুধু name); দোকান না পেলে null */
   renameStore(storeId: string, name: string): Promise<Store | null>
