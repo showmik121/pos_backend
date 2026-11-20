@@ -203,6 +203,8 @@ Each P0 includes acceptance criteria (AC) the QA plan is built from.
 
 ### 6.9 Platform admin (internal)
 
+> Full requirements, security model, data model and phases: [ADMIN_PANEL_PRD.md](ADMIN_PANEL_PRD.md).
+
 - **P0** — Tenant list with plan, status, usage, sync health; suspend/reactivate; impersonate for support (time-boxed, audit-logged, tenant-visible).
 - **P0** — Plans, feature flags, coupons, manual payment recording.
 - **P0** — Drug master management (import/update the shared pharmacy catalogue — §7.2).

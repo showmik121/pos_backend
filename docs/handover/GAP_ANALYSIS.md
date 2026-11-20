@@ -93,7 +93,7 @@ These would cause problems for a client on day one, regardless of features.
 | PRD item | Status |
 |---|---|
 | Plans, trial, subscription billing, dunning | ❌ |
-| Platform admin (tenants, suspend, impersonate, flags) | ❌ |
+| Platform admin (tenants, suspend, impersonate, flags) | ❌ — full spec: [ADMIN_PANEL_PRD.md](ADMIN_PANEL_PRD.md) |
 | Multi-outlet | ❌ (store = one outlet today) |
 
 ## 4. Recommended order
