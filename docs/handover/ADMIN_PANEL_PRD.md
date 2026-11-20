@@ -258,7 +258,10 @@ All state changes use a transaction with the previous status as a precondition (
 | 4 | proven (real Postgres) | `tests/integration/admin-schema.test.ts` "admin_app privilege boundary (acceptance 4)" |
 | 6 | proven (unit) | `tests/unit/admin-api.test.ts` "login, 2FA and enrolment (acceptance 6)"; enrolment binding on real Postgres in `tests/integration/admin-pg.test.ts` |
 | 9 | proven (unit) | `tests/unit/admin-api.test.ts` "EVERY mutating route writes an audit row"; denial rows in `tests/integration/admin-pg.test.ts` |
-| 1, 2, 5, 7, 8, 10 | not in A0 | A1 (1, 2, 7), A3 (5), A4 (8), 10 needs the A1 admin app |
+| 1 | proven (unit + real Postgres) | `tests/integration/admin-tenants-pg.test.ts` ACCEPTANCE 1 (Support POST suspend = 403 + denied audit row); unit `tests/unit/admin-tenants.test.ts` |
+| 2 | proven (real Postgres) for API/DB/sync; shop banner by unit test only | `admin-tenants-pg.test.ts` ACCEPTANCE 2 (suspend with step-up, next login/sync = `tenant_suspended`, audit row); phone queue kept: `pos_fontend` `tests/sync-engine.test.ts`; banner logic `tests/tenant-notice.test.ts`. NOT verified: banner on a real phone / browser e2e; local data untouched is by design, not asserted by a test |
+| 7 | proven (real Postgres, 10,000 tenants) | `admin-tenants-pg.test.ts` ACCEPTANCE 7: p95 about 10 ms (< 500 ms), counts exact |
+| 5, 8, 10 | not yet | A3 (5), A4 (8); 10 needs live hosting and a staging rehearsal of 012 and 013 |
 
 ## 13. Delivery plan
 
