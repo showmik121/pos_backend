@@ -129,6 +129,20 @@ Design: `docs/adr/0007`. Migration `013_admin_tenant_ops.sql`, rollback `db/roll
 - If the audit write fails after a status change committed, the API returns 500 and logs `admin action APPLIED but audit write failed ... request=<id>`. Check the tenant's status before retrying; a retry answers `invalid_transition`. Reconcile the audit trail by hand with that request id.
 - `admin_tenant_set_status` waits at most 3 s for the store row lock, then fails (retry).
 
+## ৩গ. Admin panel (A2): health rollout and rollback (English)
+Design: `docs/adr/0009`. Migration `014_admin_health.sql`, rollback `db/rollback/014_down.sql`. Needs 012 and 013 applied first.
+
+**Rollout:** unlike 013, the shop API does not call anything in 014, so there is no order hazard for shops. Only the admin API (health routes, dashboard) needs it.
+1. Backup (section ৪). Apply 014 with `npm run db:migrate` (one transaction; creates `error_triage` and five functions). Verify:
+   ```sql
+   SELECT count(*) FROM information_schema.table_privileges WHERE grantee = 'admin_app';   -- still 0
+   SELECT has_function_privilege('admin_app', 'admin_dashboard(integer)', 'EXECUTE');     -- true
+   SELECT has_function_privilege('pos_app',   'admin_dashboard(integer)', 'EXECUTE');     -- false
+   ```
+2. Set the Actions variable `APPLIED_MIGRATION=14` (ADR 0008), then merge/deploy. Check `GET /api/v1/admin/dashboard` (401 without a token).
+
+**Rollback (newest first):** `014_down.sql` -> `013_down.sql` -> `012_down.sql`. 014_down refuses while `error_triage` has rows (export, then `SET bipone.discard_error_triage = 'yes'`). 013_down refuses while 014 is applied. Revert or remove the 014 file from the deployed commit first, or the next `db:migrate` re-applies it.
+
 ## ৪. ব্যাকআপ নেওয়া
 **প্রথমে আপনার Supabase প্ল্যান দেখুন (Dashboard → Database → Backups):**
 - Pro, Team ও Enterprise-এ প্রতিদিন স্বয়ংক্রিয় ব্যাকআপ; Pro-তে শেষ ৭ দিন ([Supabase: Database Backups](https://supabase.com/docs/guides/database/backups))।

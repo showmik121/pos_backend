@@ -65,6 +65,7 @@ describe.skipIf(!SUPER || !APP || !ADMIN)("migration 012 review fixes", () => {
       // a function from a later phase must survive a rollback of 012 alone
       await db.unsafe(`CREATE FUNCTION admin_future_phase() RETURNS int LANGUAGE sql AS 'SELECT 1'`)
       const down = (await read("db", "rollback", "012_down.sql")).replace(/^DROP ROLE IF EXISTS admin_app;$/m, "")
+      await db.unsafe(await read("db", "rollback", "014_down.sql")) // newest first: 014 and 013 depend on 012 (docs/RUNBOOK.md)
       await db.unsafe(await read("db", "rollback", "013_down.sql")) // newest first: 013 depends on 012, and must keep admin_future_phase
 
       expect(await sqlCode(db.unsafe(down))).toBe("P0001")

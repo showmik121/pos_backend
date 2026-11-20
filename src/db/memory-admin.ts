@@ -1,9 +1,14 @@
 import { randomUUID } from "node:crypto"
 import { DomainError } from "../domain/errors.js"
-import type { AuditRowDto, TenantDetail, TenantNote, TenantRow } from "../contract/admin-api.js"
+import type { AuditRowDto, ClientErrorRow, ErrorStatus, TenantDetail, TenantNote, TenantRow } from "../contract/admin-api.js"
 import { decodeAuditCursor, decodeOffsetCursor, encodeOffsetCursor, maskPhone, nextStatus } from "../domain/tenant-admin.js"
 import type { AdminRecord, AdminRepo, AdminSession, AdminSummary, AuditEntry } from "./admin.js"
 import type { StoreKind, StoreStatus } from "./types.js"
+
+// statuses the sync-health views leave out: the shop is gone or going, or suspended (it cannot sync, so "stuck" would be noise)
+// byte-order comparison, like Postgres with the C collation on hex/uuid text (localeCompare depends on the machine's locale)
+const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+const GONE: ReadonlySet<StoreStatus> = new Set<StoreStatus>(["deleted", "cancelled", "pending_deletion", "suspended"])
 
 // In-memory AdminRepo for unit tests. Mirrors the SQL functions in db/migrations/012 and 013 (same guards, same atomic semantics).
 export interface AuditRow extends AuditEntry {
@@ -53,9 +58,23 @@ export function createMemoryAdmin(opts: { now?: () => number; onStatusChange?: (
   /** test seam: puts a tenant into the directory the admin routes read (production reads the stores table) */
   seedTenant(seed: TenantSeed): string
   seedStaff(storeId: string, p: { name: string; phone: string; role?: "owner" | "staff" }): void
+  /** test seam: a row of the shop's client_errors table (one per fingerprint) */
+  seedClientError(e: { fingerprint: string; kind: string; message: string; path: string | null; appVersion: string | null; count: number; firstAt: string; lastAt: string; storeId: string | null }): void
+  /** test seam: live batches below zero for a tenant (production reads stock_batches) */
+  seedNegativeStock(storeId: string, v: { batches: number; unitsShort: number }): void
 } {
   const now = opts.now ?? (() => Date.now())
   const tenants = new Map<string, TenantRec>()
+  const clientErrors = new Map<string, Omit<ClientErrorRow, "status" | "note" | "firstStoreId"> & { storeId: string | null }>()
+  const triage = new Map<string, { status: ErrorStatus; note: string | null; updatedAt: string }>()
+  const negative = new Map<string, { batches: number; unitsShort: number }>()
+  // a resolved error seen again after it was resolved is open again; an ignored one stays ignored (db/migrations/014)
+  const effectiveStatus = (fp: string): ErrorStatus => {
+    const tr = triage.get(fp)
+    const e = clientErrors.get(fp)
+    if (!tr) return "open"
+    return tr.status === "resolved" && e && Date.parse(e.lastAt) > Date.parse(tr.updatedAt) ? "open" : tr.status
+  }
   let noteSeq = 0
   const admins = new Map<string, AdminRecord>()
   interface S { id: string; adminId: string; stage: "pending" | "active"; lastSeen: number; expiresAt: number; stepUpUntil: number | null; revokedAt: number | null; revokedReason: string | null }
@@ -109,6 +128,8 @@ export function createMemoryAdmin(opts: { now?: () => number; onStatusChange?: (
       })
       return id
     },
+    seedClientError(e) { clientErrors.set(e.fingerprint, { ...e }) },
+    seedNegativeStock(storeId, v) { negative.set(storeId, v) },
     seedStaff(storeId, p) {
       tenants.get(storeId)?.people.push({ name: p.name, phone: p.phone, role: p.role ?? "staff", active: true, createdAt: iso(now()) })
     },
@@ -299,6 +320,62 @@ export function createMemoryAdmin(opts: { now?: () => number; onStatusChange?: (
         before: r.before ?? null, after: r.after ?? null, ip: r.ip ?? null, requestId: r.requestId ?? null,
       }))
       return { rows, nextCursor: hits.length > q.limit ? String(page[page.length - 1]!.id) : null }
+    },
+
+    // ---- health (A2). Mirrors admin_health_* in db/migrations/014.
+    async healthSync({ stuckHours, limit }) {
+      const cutoff = now() - stuckHours * 3_600_000
+      const rows = [...tenants.values()]
+        .filter((t) => !GONE.has(t.status) && Date.parse(t.lastSyncAt ?? t.createdAt) < cutoff)
+        .sort((a, b) => Date.parse(a.lastSyncAt ?? a.createdAt) - Date.parse(b.lastSyncAt ?? b.createdAt) || cmp(a.id, b.id))
+      return {
+        total: rows.length,
+        tenants: rows.slice(0, limit).map((t) => ({
+          id: t.id, name: t.name, status: t.status, lastSyncAt: t.lastSyncAt, createdAt: t.createdAt,
+          hoursSinceSync: Math.floor((now() - Date.parse(t.lastSyncAt ?? t.createdAt)) / 3_600_000),
+        })),
+      }
+    },
+    async listClientErrors({ status, limit }) {
+      return [...clientErrors.values()]
+        .map((e): ClientErrorRow => {
+          const tr = triage.get(e.fingerprint)
+          return {
+            fingerprint: e.fingerprint, kind: e.kind, message: e.message, path: e.path, appVersion: e.appVersion, count: e.count,
+            firstAt: e.firstAt, lastAt: e.lastAt, firstStoreId: e.storeId, status: effectiveStatus(e.fingerprint), note: tr?.note ?? null,
+          }
+        })
+        .filter((e) => status === "all" || e.status === status)
+        .sort((a, b) => b.lastAt.localeCompare(a.lastAt) || cmp(a.fingerprint, b.fingerprint))
+        .slice(0, limit)
+    },
+    async setErrorTriage({ fingerprint, status, note }) {
+      if (!clientErrors.has(fingerprint)) return null
+      const updatedAt = iso(now())
+      triage.set(fingerprint, { status, note, updatedAt })
+      return { fingerprint, status, note, updatedAt }
+    },
+    async negativeStock({ limit }) {
+      const rows = [...negative.entries()]
+        .filter(([id, v]) => tenants.has(id) && v.batches > 0)
+        .map(([id, v]) => ({ id, name: tenants.get(id)!.name, status: tenants.get(id)!.status, batches: v.batches, unitsShort: v.unitsShort }))
+        .sort((a, b) => b.unitsShort - a.unitsShort || cmp(a.id, b.id))
+      return { total: rows.length, tenants: rows.slice(0, limit) }
+    },
+    async dashboard(stuckHours) {
+      const all = [...tenants.values()]
+      const byStatus: Record<string, number> = {}
+      for (const t of all) byStatus[t.status] = (byStatus[t.status] ?? 0) + 1
+      const dhakaDay = (ms: number) => Math.floor((ms + 6 * 3_600_000) / 86_400_000)
+      const cutoff = now() - stuckHours * 3_600_000
+      return {
+        tenantsByStatus: byStatus,
+        stuckSync: all.filter((t) => !GONE.has(t.status) && Date.parse(t.lastSyncAt ?? t.createdAt) < cutoff).length,
+        newErrors: [...clientErrors.values()].filter((e) => effectiveStatus(e.fingerprint) === "open" && Date.parse(e.lastAt) >= now() - 86_400_000).length,
+        negativeStockTenants: [...negative.entries()].filter(([id, v]) => tenants.has(id) && v.batches > 0).length,
+        signupsToday: all.filter((t) => dhakaDay(Date.parse(t.createdAt)) === dhakaDay(now())).length,
+        stuckHours,
+      }
     },
 
     async throttle(bucket, max, windowSeconds) {

@@ -1,4 +1,7 @@
-import type { AuditListQuery, AuditRowDto, StatusChangeResult, TenantDetail, TenantListQuery, TenantNote, TenantRow } from "../contract/admin-api.js"
+import type {
+  AuditListQuery, AuditRowDto, ClientErrorRow, ClientErrorsQuery, Dashboard, ErrorStatus, ErrorTriageResult, NegativeStockQuery, NegativeStockRow, StatusChangeResult,
+  SyncHealthQuery, SyncHealthRow, TenantDetail, TenantListQuery, TenantNote, TenantRow,
+} from "../contract/admin-api.js"
 import type { AdminRole } from "../domain/admin-permissions.js"
 import type { TenantStatusAction } from "../domain/tenant-admin.js"
 
@@ -105,6 +108,17 @@ export interface AdminRepo {
   addNote(storeId: string, adminId: string, body: string, tags: string[]): Promise<TenantNote | null>
   /** newest first; cursor = the last id of the previous page */
   listAudit(q: AuditListQuery): Promise<{ rows: AuditRowDto[]; nextCursor: string | null }>
+
+  // ---- health (A2). Counts and metadata only: no event payloads, product names, prices or cost.
+  /** stores with no sync for `stuckHours` (never-synced: from creation), deleted/cancelled/pending_deletion left out, oldest first */
+  healthSync(q: SyncHealthQuery): Promise<{ tenants: SyncHealthRow[]; total: number }>
+  /** one row per fingerprint, newest `lastAt` first; `status` filters on the triage status (no triage row = open) */
+  listClientErrors(q: ClientErrorsQuery): Promise<ClientErrorRow[]>
+  /** null if no such fingerprint (it may have been purged after 30 days) */
+  setErrorTriage(input: { fingerprint: string; status: ErrorStatus; note: string | null; adminId: string }): Promise<ErrorTriageResult | null>
+  /** stores with a live batch below zero, most units short first */
+  negativeStock(q: NegativeStockQuery): Promise<{ tenants: NegativeStockRow[]; total: number }>
+  dashboard(stuckHours: number): Promise<Dashboard>
 
   /** bucket is namespaced "admin:" inside the repo so shop attempts can never lock admins out (§17.8) */
   throttle(bucket: string, max: number, windowSeconds: number): Promise<boolean>

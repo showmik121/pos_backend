@@ -17,6 +17,9 @@ export const ADMIN_ACTIONS = {
   "tenant.notes.write": ["super", "support"],
   "tenant.suspend": ["super"],
   "tenant.export": ["super"],
+  // health (A2): sync health, client errors, negative stock, dashboard tiles. Triage writes, so Viewer/Finance cannot.
+  "health.read": ["super", "support", "finance", "viewer"],
+  "health.triage": ["super", "support"],
   // billing (A3+)
   "billing.payment.record": ["super", "finance"],
   "billing.trial.extend": ["super", "finance"],

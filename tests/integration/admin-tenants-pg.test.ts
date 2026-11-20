@@ -471,6 +471,12 @@ describe.skipIf(!ENABLED)("013 rollback (db/rollback/013_down.sql)", () => {
       await db.sup`INSERT INTO tenant_notes (store_id, body) VALUES (${id}, 'important')`
       const down = await read("db", "rollback", "013_down.sql")
 
+      // 014 (health) reads 013's stores.last_sync_at and plpgsql bodies are not dependency-tracked: 013_down refuses until 014 is rolled back (newest first)
+      expect(await sqlCode(one.unsafe(down))).toBe("P0001")
+      await one.unsafe("ROLLBACK").catch(() => undefined)
+      expect((await db.sup`SELECT to_regclass('error_triage') AS t`)[0]!.t).not.toBeNull()
+      expect(await sqlCode(one.unsafe(await read("db", "rollback", "014_down.sql")))).toBe("ok")
+
       expect(await sqlCode(one.unsafe(down))).toBe("P0001") // data present: refuses
       await one.unsafe("ROLLBACK").catch(() => undefined)
       expect((await db.sup`SELECT count(*)::int AS n FROM tenant_notes`)[0]!.n).toBe(1)

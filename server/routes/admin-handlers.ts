@@ -3,9 +3,10 @@ import { decryptSecret, encryptSecret, generateRecoveryCodes, hashRecoveryCode }
 import { dummyHash, hashPassword, verifyPassword } from "../../src/auth/password.js"
 import { loginEmailBucket, loginIpBucket, loginPairBucket } from "../../src/auth/admin-throttle-keys.js"
 import { generateTotpSecret, otpauthUri, verifyTotp } from "../../src/auth/totp.js"
-import { ADMIN_POLICY, type AdminRouteId, type RequestOf, type ResponseOf, type StatusChangeResult } from "../../src/contract/admin-api.js"
+import { ADMIN_POLICY, DEFAULT_STUCK_HOURS, type AdminRouteId, type RequestOf, type ResponseOf, type StatusChangeResult } from "../../src/contract/admin-api.js"
 import type { AdminRecord, AdminRepo, AdminSession, AdminSummary, AuditEntry } from "../../src/db/admin.js"
 import { DomainError } from "../../src/domain/errors.js"
+import { safeVersion, scrubCrashText } from "../../src/domain/scrub.js"
 import type { TenantStatusAction } from "../../src/domain/tenant-admin.js"
 
 // Handlers for /v1/admin. Typed from the contract: a route cannot exist without a contract entry, and the
@@ -25,7 +26,7 @@ export interface AdminCtx {
 export interface HandlerArgs<K extends AdminRouteId> {
   ctx: AdminCtx
   body: RequestOf<K>
-  params: { id?: string }
+  params: { id?: string; fingerprint?: string }
   /** null only for auth: "none" routes */
   session: AdminSession | null
 }
@@ -87,6 +88,11 @@ async function changeStatus(
   const r = await ctx.repo.changeTenantStatus({ storeId, action, adminId: session.adminId, reason, message })
   return { body: r, audit: tenantAudit(storeId, { reason, before: { status: r.fromStatus }, after: { status: r.toStatus, ownerMessage: message } }) }
 }
+
+// crash text is attacker-writable (POST /v1/client-errors has no auth): scrub it again on the way out (src/domain/scrub.ts)
+const scrubError = <T extends { message: string; path: string | null; appVersion: string | null }>(e: T): T => ({
+  ...e, message: scrubCrashText(e.message), path: e.path === null ? null : scrubCrashText(e.path), appVersion: safeVersion(e.appVersion),
+})
 
 export const adminHandlers: Handlers = {
   async "auth.login"({ ctx, body }) {
@@ -238,7 +244,7 @@ export const adminHandlers: Handlers = {
   async "tenants.get"({ ctx, params }) {
     const detail = await ctx.repo.getTenant(params.id!)
     if (!detail) throw tenantNotFound()
-    return { body: detail }
+    return { body: { ...detail, recentErrors: detail.recentErrors.map((e) => ({ ...e, message: scrubCrashText(e.message), appVersion: safeVersion(e.appVersion) })) } }
   },
 
   // Revealing a number is itself an audited action (PRD §6.2): the row records who, which tenant, why, and how many numbers.
@@ -268,6 +274,27 @@ export const adminHandlers: Handlers = {
     const note = await ctx.repo.addNote(params.id!, session!.adminId, body.body, body.tags)
     if (!note) throw tenantNotFound()
     return { body: { note }, audit: tenantAudit(params.id!, { after: { noteId: note.id, tags: note.tags } }) }
+  },
+
+  // ---- health (A2)
+  async "health.sync"({ ctx, body }) {
+    return { body: { ...(await ctx.repo.healthSync(body)), stuckHours: body.stuckHours } }
+  },
+  async "health.errors"({ ctx, body }) {
+    return { body: { errors: (await ctx.repo.listClientErrors(body)).map(scrubError) } }
+  },
+  // The note is free text, so it stays out of the audit row (same rule as tenant notes): the row keeps the fingerprint and the status.
+  // The audit target (client_error + fingerprint) comes from the path, so a denied or failed attempt is recorded with it too.
+  async "health.errors.triage"({ ctx, body, params, session }) {
+    const r = await ctx.repo.setErrorTriage({ fingerprint: params.fingerprint!, status: body.status, note: body.note ?? null, adminId: session!.adminId })
+    if (!r) throw new DomainError("not_found", "Error not found.")
+    return { body: r, audit: { after: { status: r.status } } }
+  },
+  async "health.negativeStock"({ ctx, body }) {
+    return { body: await ctx.repo.negativeStock(body) }
+  },
+  async "dashboard.get"({ ctx }) {
+    return { body: await ctx.repo.dashboard(DEFAULT_STUCK_HOURS) }
   },
 
   async "audit.list"({ ctx, body }) {

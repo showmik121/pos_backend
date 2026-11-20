@@ -113,7 +113,7 @@ describe("token confusion (acceptance 3)", () => {
     for (const token of [shop.json.token as string, forged]) {
       for (const r of ADMIN_ROUTES) {
         if (r.contract.auth === "none") continue
-        const path = `/v1/admin${r.contract.path.replace(":id", UUID0)}`
+        const path = `/v1/admin${r.contract.path.replace(":id", UUID0).replace(":fingerprint", "f".repeat(32))}`
         const res = await h.call(r.contract.method, path, { token, body: r.contract.method === "GET" ? undefined : {} })
         expect(res.status, `${r.contract.method} ${path}`).toBe(401)
       }
@@ -411,6 +411,15 @@ describe("permissions, step-up and the audit trail (acceptance 1, 9)", () => {
     const reactivate = await h.call("POST", tp("/reactivate"), { token, body: { reason: "paid" } })
     const suspend = await h.call("POST", tp("/suspend"), { token, body: { reason: "abuse" } })
     const auditList = await h.call("GET", "/v1/admin/audit", { token })
+    // A2 health routes
+    const fp = "d".repeat(32)
+    h.adminRepo.seedClientError({ fingerprint: fp, kind: "render", message: "boom", path: "/", appVersion: "abc", count: 1, firstAt: new Date(h.now() - 1000).toISOString(), lastAt: new Date(h.now()).toISOString(), storeId: tid })
+    h.adminRepo.seedNegativeStock(tid, { batches: 1, unitsShort: 2 })
+    const hSync = await h.call("GET", "/v1/admin/health/sync", { token })
+    const hErrors = await h.call("GET", "/v1/admin/health/errors", { token })
+    const hTriage = await h.call("POST", `/v1/admin/health/errors/${fp}/triage`, { token, body: { status: "resolved" } })
+    const hNeg = await h.call("GET", "/v1/admin/health/negative-stock", { token })
+    const dash = await h.call("GET", "/v1/admin/dashboard", { token })
     const out = await h.call("POST", "/v1/admin/auth/logout", { token, body: {} })
 
     const byId: Record<string, { status: number; json: unknown }> = {
@@ -418,6 +427,7 @@ describe("permissions, step-up and the audit trail (acceptance 1, 9)", () => {
       "auth.logout": out, me, "admins.list": list, "admins.create": created, "admins.update": patched, "admins.reset2fa": reset, "admins.resetPassword": resetPw,
       "tenants.list": tList, "tenants.get": tGet, "tenants.revealPhone": reveal, "tenants.suspend": suspend, "tenants.readOnly": readOnly, "tenants.reactivate": reactivate,
       "tenants.notes.list": noteList, "tenants.notes.add": noteAdd, "audit.list": auditList,
+      "health.sync": hSync, "health.errors": hErrors, "health.errors.triage": hTriage, "health.negativeStock": hNeg, "dashboard.get": dash,
     }
     for (const id of ADMIN_ROUTE_IDS) {
       const c = adminContract[id]

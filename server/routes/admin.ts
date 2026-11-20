@@ -29,9 +29,10 @@ interface Compiled {
 }
 
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+const FINGERPRINT = "[0-9a-f]{32}"
 export const ADMIN_ROUTES: readonly Compiled[] = ADMIN_ROUTE_IDS.map((id) => {
   const contract: RouteContract = adminContract[id]
-  return { id, contract, regex: new RegExp(`^${contract.path.replace(":id", `(${UUID})`)}$`) }
+  return { id, contract, regex: new RegExp(`^${contract.path.replace(":id", `(${UUID})`).replace(":fingerprint", `(${FINGERPRINT})`)}$`) }
 })
 
 export interface AdminRequestInfo {
@@ -98,7 +99,9 @@ export async function adminRoute(info: AdminRequestInfo): Promise<Result> {
   const route = ADMIN_ROUTES.find((r) => r.contract.method === req.method && r.regex.test(path))
   if (!route) throw new DomainError("not_found", "Not found.")
   const { contract, id } = route
-  const params = { id: route.regex.exec(path)?.[1] }
+  const captured = route.regex.exec(path)?.[1]
+  // exactly one path parameter per route: a UUID `:id`, or a 32-hex `:fingerprint`
+  const params = contract.path.includes(":fingerprint") ? { id: undefined, fingerprint: captured } : { id: captured, fingerprint: undefined }
 
   // bounded per address before anything is written (deliberately not audited: it is the flood guard itself)
   if (ctx.ip && !(await ctx.repo.throttle(`pre:${ctx.ip}`, PRE_AUTH_LIMIT.max, PRE_AUTH_LIMIT.window))) {
@@ -116,8 +119,8 @@ export async function adminRoute(info: AdminRequestInfo): Promise<Result> {
       actor: "admin",
       action: contract.audit as string,
       // a denied or failed attempt still records WHAT it was aimed at (acceptance 1: a Support suspend names the tenant)
-      targetType: params.id ? (contract.target ?? "admin") : null,
-      targetId: params.id ?? null,
+      targetType: captured ? (contract.target ?? "admin") : null,
+      targetId: captured ?? null,
       ...(contract.target === "tenant" && params.id ? { storeId: params.id } : {}),
       ...extra,
       ...(extra.adminId !== undefined ? { adminId: extra.adminId } : {}),

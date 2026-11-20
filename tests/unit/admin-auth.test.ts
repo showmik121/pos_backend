@@ -134,8 +134,10 @@ describe("admin permission matrix (PRD §3)", () => {
   it("viewer is read-only with no personal-data reveal", () => {
     expect(can("viewer", "tenant.read")).toBe(true)
     expect(can("viewer", "tenant.reveal_phone")).toBe(false)
+    expect(can("viewer", "health.read")).toBe(true)
+    expect(can("viewer", "health.triage")).toBe(false)
     for (const a of Object.keys(ADMIN_ACTIONS) as (keyof typeof ADMIN_ACTIONS)[]) {
-      if (a === "tenant.read" || a === "audit.read") continue
+      if (a === "tenant.read" || a === "audit.read" || a === "health.read") continue
       expect(can("viewer", a), a).toBe(false)
     }
   })

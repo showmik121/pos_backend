@@ -4,6 +4,13 @@
 --   2) run this file   3) verify /health and a shop login + sync.
 -- It DESTROYS tenant_notes and tenant_status_events (the suspend / read-only history shown to shop owners). 012 stays applied.
 BEGIN;
+-- 014 (admin health) depends on 013 (stores.last_sync_at) and on 012: it must be rolled back first (db/rollback/014_down.sql)
+DO $$
+BEGIN
+  IF to_regclass('public.error_triage') IS NOT NULL OR to_regprocedure('admin_dashboard(integer)') IS NOT NULL THEN
+    RAISE EXCEPTION 'migration 014 is still applied: run db/rollback/014_down.sql first (newest first)' USING ERRCODE = 'P0001';
+  END IF;
+END $$;
 SET LOCAL lock_timeout = '5s';   -- DROP COLUMN on stores takes ACCESS EXCLUSIVE: fail fast instead of queueing every shop request
 
 -- Notes and the status history are records of operator decisions. Refuse to drop them silently: export them first, then re-run this

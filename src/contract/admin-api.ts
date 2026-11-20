@@ -35,7 +35,7 @@ export type AuthLevel = "none" | "pending" | "session"
 
 export interface RouteContract {
   method: "GET" | "POST" | "PATCH"
-  /** relative to /v1/admin; ":id" is a UUID */
+  /** relative to /v1/admin; ":id" is a UUID, ":fingerprint" is 32 lowercase hex chars */
   path: string
   auth: AuthLevel
   /** permission-matrix action, or null for routes that only need a session (or none) */
@@ -45,7 +45,8 @@ export interface RouteContract {
   /** audit action name; required when mutating */
   audit: string | null
   /** what `:id` refers to; drives the default audit target, so a denied attempt on a tenant still records which tenant */
-  target?: "admin" | "tenant"
+  target?: "admin" | "tenant" | "client_error"
+  // a path may also carry `:fingerprint` (32 hex chars, a client_errors row); it is the audit target of that route, denied attempts included
   /** success status code */
   status: number
   request: z.ZodType
@@ -149,6 +150,85 @@ export const AuditListQuerySchema = z.object({
   cursor: z.string().max(40).optional(),
 })
 export type AuditListQuery = z.infer<typeof AuditListQuerySchema>
+
+// ---------------------------------------------------------------- health (A2)
+// Metadata and counts only. Negative stock is reported as batch/unit COUNTS: never product names, prices or cost.
+export const ErrorStatusSchema = z.enum(["open", "resolved", "ignored"])
+export type ErrorStatus = z.infer<typeof ErrorStatusSchema>
+
+/** a tenant with no successful sync for this many hours is "stuck": the default of the sync-health list and the dashboard tile */
+export const DEFAULT_STUCK_HOURS = 24
+export const SyncHealthQuerySchema = z.object({
+  /** a store that never synced counts from its creation */
+  stuckHours: z.coerce.number().int().min(1).max(8760).default(DEFAULT_STUCK_HOURS),
+  limit: z.coerce.number().int().min(1).max(200).default(100),
+})
+export type SyncHealthQuery = z.infer<typeof SyncHealthQuerySchema>
+export const SyncHealthRowSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  status: StoreStatusSchema,
+  lastSyncAt: z.string().nullable(),
+  createdAt: z.string(),
+  hoursSinceSync: z.number().int().nonnegative(),
+})
+export type SyncHealthRow = z.infer<typeof SyncHealthRowSchema>
+
+export const ClientErrorsQuerySchema = z.object({
+  status: z.enum(["open", "resolved", "ignored", "all"]).default("open"),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+})
+export type ClientErrorsQuery = z.infer<typeof ClientErrorsQuerySchema>
+// client_errors keeps one row per fingerprint and only the FIRST reporting store, so "affected tenants" cannot be counted (ADR 0009).
+export const ClientErrorRowSchema = z.object({
+  fingerprint: z.string(),
+  kind: z.string(),
+  message: z.string(),
+  path: z.string().nullable(),
+  appVersion: z.string().nullable(),
+  count: z.number().int().nonnegative(),
+  firstAt: z.string(),
+  lastAt: z.string(),
+  firstStoreId: z.uuid().nullable(),
+  status: ErrorStatusSchema,
+  note: z.string().nullable(),
+})
+export type ClientErrorRow = z.infer<typeof ClientErrorRowSchema>
+
+// the fingerprint is in the PATH (so even a denied attempt audits which error it aimed at), the decision is in the body.
+// Omitting `note` clears any earlier note: the note belongs to the latest decision.
+export const ErrorTriageRequestSchema = z.object({
+  status: ErrorStatusSchema,
+  note: z.string().trim().min(1).max(500).optional(),
+})
+export const ErrorTriageResultSchema = z.object({ fingerprint: z.string(), status: ErrorStatusSchema, note: z.string().nullable(), updatedAt: z.string() })
+export type ErrorTriageResult = z.infer<typeof ErrorTriageResultSchema>
+
+export const NegativeStockQuerySchema = z.object({ limit: z.coerce.number().int().min(1).max(200).default(100) })
+export type NegativeStockQuery = z.infer<typeof NegativeStockQuerySchema>
+export const NegativeStockRowSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  status: StoreStatusSchema,
+  /** number of live batches below zero */
+  batches: z.number().int().positive(),
+  /** total pieces short across those batches (positive number) */
+  unitsShort: z.number().int().positive(),
+})
+export type NegativeStockRow = z.infer<typeof NegativeStockRowSchema>
+
+export const DashboardSchema = z.object({
+  tenantsByStatus: z.record(z.string(), z.number().int().nonnegative()),
+  stuckSync: z.number().int().nonnegative(),
+  /** open (not resolved/ignored) client errors seen in the last 24 hours */
+  newErrors: z.number().int().nonnegative(),
+  negativeStockTenants: z.number().int().nonnegative(),
+  /** signups since midnight Asia/Dhaka */
+  signupsToday: z.number().int().nonnegative(),
+  /** the stuck-sync window these counts used */
+  stuckHours: z.number().int().positive(),
+})
+export type Dashboard = z.infer<typeof DashboardSchema>
 
 export const adminContract = {
   "auth.login": {
@@ -264,6 +344,32 @@ export const adminContract = {
     method: "GET", path: "/audit", auth: "session", action: "audit.read", mutating: false, audit: null, status: 200,
     request: AuditListQuerySchema,
     response: z.object({ rows: z.array(AuditRowSchema), nextCursor: z.string().nullable() }),
+  },
+  // ---- health and dashboard (A2)
+  "health.sync": {
+    method: "GET", path: "/health/sync", auth: "session", action: "health.read", mutating: false, audit: null, status: 200,
+    request: SyncHealthQuerySchema,
+    response: z.object({ tenants: z.array(SyncHealthRowSchema), total: z.number().int().nonnegative(), stuckHours: z.number().int().positive() }),
+  },
+  "health.errors": {
+    method: "GET", path: "/health/errors", auth: "session", action: "health.read", mutating: false, audit: null, status: 200,
+    request: ClientErrorsQuerySchema,
+    response: z.object({ errors: z.array(ClientErrorRowSchema) }),
+  },
+  "health.errors.triage": {
+    method: "POST", path: "/health/errors/:fingerprint/triage", auth: "session", action: "health.triage", target: "client_error", mutating: true, audit: "admin.health.error_triage", status: 200,
+    request: ErrorTriageRequestSchema,
+    response: ErrorTriageResultSchema,
+  },
+  "health.negativeStock": {
+    method: "GET", path: "/health/negative-stock", auth: "session", action: "health.read", mutating: false, audit: null, status: 200,
+    request: NegativeStockQuerySchema,
+    response: z.object({ tenants: z.array(NegativeStockRowSchema), total: z.number().int().nonnegative() }),
+  },
+  "dashboard.get": {
+    method: "GET", path: "/dashboard", auth: "session", action: "health.read", mutating: false, audit: null, status: 200,
+    request: Empty,
+    response: DashboardSchema,
   },
 } as const satisfies Record<string, RouteContract>
 

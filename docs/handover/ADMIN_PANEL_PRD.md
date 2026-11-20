@@ -261,6 +261,7 @@ All state changes use a transaction with the previous status as a precondition (
 | 1 | proven (unit + real Postgres) | `tests/integration/admin-tenants-pg.test.ts` ACCEPTANCE 1 (Support POST suspend = 403 + denied audit row); unit `tests/unit/admin-tenants.test.ts` |
 | 2 | proven (real Postgres) for API/DB/sync; shop banner by unit test only | `admin-tenants-pg.test.ts` ACCEPTANCE 2 (suspend with step-up, next login/sync = `tenant_suspended`, audit row); phone queue kept: `pos_fontend` `tests/sync-engine.test.ts`; banner logic `tests/tenant-notice.test.ts`. NOT verified: banner on a real phone / browser e2e; local data untouched is by design, not asserted by a test |
 | 7 | proven (real Postgres, 10,000 tenants) | `admin-tenants-pg.test.ts` ACCEPTANCE 7: p95 about 10 ms (< 500 ms), counts exact |
+| A2 exit | backend proven (unit + real Postgres), UI pending | "Operators stop using SQL editor for errors": routes `/health/sync`, `/health/errors`, `/health/errors/:fingerprint/triage`, `/health/negative-stock`, `/dashboard`; `tests/unit/admin-health.test.ts`, `tests/integration/admin-health-pg.test.ts` (parity memory vs SQL, privileges, 10,000-tenant p95 about 33 ms). NOT done: version distribution H-4 (A2b), owner-side negative-stock alert in the shop app, panel UI |
 | 5, 8, 10 | not yet | A3 (5), A4 (8); 10 needs live hosting and a staging rehearsal of 012 and 013 |
 
 ## 13. Delivery plan

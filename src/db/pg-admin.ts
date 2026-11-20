@@ -39,6 +39,7 @@ function mapError(err: unknown): unknown {
   if (e?.code === "P0001" && e.message === "last_super_admin") {
     return new DomainError("last_super_admin", "শেষ সুপার অ্যাডমিনকে সরানো বা নামানো যাবে না")
   }
+  if (e?.code === "P0001" && e.message === "error_not_found") return new DomainError("not_found", "Error not found.")
   if (e?.code === "P0001" && e.message === "tenant_not_found") return new DomainError("not_found", "Tenant not found.")
   if (e?.code === "P0001" && e.message === "invalid_transition") {
     return new DomainError("invalid_transition", "That change is not allowed in the tenant's current status.")
@@ -231,6 +232,54 @@ export function createPgAdmin(opts: { connectionString: string; max?: number }):
           ip: r.ip, requestId: r.request_id,
         })),
         nextCursor: rows.length > q.limit ? String(page[page.length - 1]!.id) : null,
+      }
+    },
+
+    // ---- health (A2): db/migrations/014
+    async healthSync(q) {
+      const rows = await run(sql<Array<{ id: string; name: string; status: StoreStatus; last_sync_at: Date | null; created_at: Date; hours_since: number; total: string }>>`
+        SELECT * FROM admin_health_sync(${q.stuckHours}, ${q.limit})`)
+      return {
+        total: rows[0] ? Number(rows[0].total) : 0,
+        tenants: rows.map((r) => ({ id: r.id, name: r.name, status: r.status, lastSyncAt: iso(r.last_sync_at), createdAt: iso(r.created_at) as string, hoursSinceSync: r.hours_since })),
+      }
+    },
+    async listClientErrors(q) {
+      const rows = await run(sql<Array<{
+        fingerprint: string; kind: string; message: string; path: string | null; app_version: string | null; count: number; first_at: Date; last_at: Date
+        store_id: string | null; status: "open" | "resolved" | "ignored"; note: string | null
+      }>>`SELECT * FROM admin_health_errors(${q.status}, ${q.limit})`)
+      return rows.map((r) => ({
+        fingerprint: r.fingerprint, kind: r.kind, message: r.message, path: r.path, appVersion: r.app_version, count: r.count,
+        firstAt: iso(r.first_at) as string, lastAt: iso(r.last_at) as string, firstStoreId: r.store_id, status: r.status, note: r.note,
+      }))
+    },
+    async setErrorTriage({ fingerprint, status, note, adminId }) {
+      try {
+        const rows = await run(sql<Array<{ fingerprint: string; status: "open" | "resolved" | "ignored"; note: string | null; updated_at: Date }>>`
+          SELECT * FROM admin_error_triage_set(${fingerprint}, ${status}, ${note}, ${adminId})`)
+        const r = rows[0]!
+        return { fingerprint: r.fingerprint, status: r.status, note: r.note, updatedAt: iso(r.updated_at) as string }
+      } catch (err) {
+        if (err instanceof DomainError && err.code === "not_found") return null
+        throw err
+      }
+    },
+    async negativeStock(q) {
+      const rows = await run(sql<Array<{ id: string; name: string; status: StoreStatus; batches: string; units_short: string; total: string }>>`
+        SELECT * FROM admin_health_negative_stock(${q.limit})`)
+      return {
+        total: rows[0] ? Number(rows[0].total) : 0,
+        tenants: rows.map((r) => ({ id: r.id, name: r.name, status: r.status, batches: Number(r.batches), unitsShort: Number(r.units_short) })),
+      }
+    },
+    async dashboard(stuckHours) {
+      const rows = await run(sql<Array<{ by_status: Record<string, number>; stuck_sync: string; new_errors: string; negative_tenants: string; signups_today: string }>>`
+        SELECT * FROM admin_dashboard(${stuckHours})`)
+      const r = rows[0]!
+      return {
+        tenantsByStatus: r.by_status, stuckSync: Number(r.stuck_sync), newErrors: Number(r.new_errors),
+        negativeStockTenants: Number(r.negative_tenants), signupsToday: Number(r.signups_today), stuckHours,
       }
     },
 
