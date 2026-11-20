@@ -89,6 +89,14 @@ export function createMemoryRepo(opts: { now?: () => number } = {}): Repo & { pe
       return stores.get(storeId) ?? null
     },
 
+    async renameStore(storeId, name) {
+      const s = stores.get(storeId)
+      if (!s) return null
+      const next = { ...s, name }
+      stores.set(storeId, next)
+      return next
+    },
+
     async createStaff(storeId, { name, phone, passwordHash }) {
       if (phoneTaken(phone)) throw taken()
       const u: UserWithHash = { id: randomUUID(), storeId, name, phone, passwordHash, role: "staff", active: true }

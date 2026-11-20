@@ -232,6 +232,16 @@ export function createApp(opts: AppOptions): App {
       return { status: 200, body: { user, store } }
     }
 
+    // দোকানের নাম বদল (শুধু মালিক)
+    if (key === "PATCH /v1/store") {
+      const owner = await authenticate(req)
+      requireOwner(owner)
+      const b = await readJson(req)
+      const store = await repo.renameStore(owner.storeId, cleanText(b.name, "দোকানের নাম"))
+      if (!store) throw new DomainError("not_found", "দোকান পাওয়া যায়নি")
+      return { status: 200, body: { store } }
+    }
+
     // সিংক: ইভেন্ট-লগ (ডিভাইস নিবন্ধন, push, pull)
     if (key === "POST /v1/sync/register-device") {
       const user = await authenticate(req)

@@ -68,6 +68,8 @@ export interface Repo extends CatalogRepo, StockRepo, DuesRepo, SalesRepo {
 
   getUser(storeId: string, userId: string): Promise<PublicUser | null>
   getStore(storeId: string): Promise<Store | null>
+  /** দোকানের নাম বদলায় (শুধু name); দোকান না পেলে null */
+  renameStore(storeId: string, name: string): Promise<Store | null>
   createStaff(storeId: string, input: { name: string; phone: string; passwordHash: string }): Promise<PublicUser>
   listStaff(storeId: string): Promise<PublicUser[]>
   setUserActive(storeId: string, userId: string, active: boolean): Promise<PublicUser | null>
