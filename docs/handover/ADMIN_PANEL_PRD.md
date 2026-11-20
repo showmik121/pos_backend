@@ -250,6 +250,16 @@ All state changes use a transaction with the previous status as a precondition (
 9. *Given* any mutating admin route, *when* the CI route-audit test runs, *then* it fails if the route does not write an audit row.
 10. *Given* a mistake in a deployed admin release, *when* the admin app is rolled back, *then* shops are unaffected (separate deploy).
 
+**Acceptance status, phase A0 (2026-11-20, local throwaway Postgres + unit tests; staging rehearsal still pending):**
+
+| # | Status | Evidence |
+|---|---|---|
+| 3 | proven (unit) | `tests/unit/admin-api.test.ts` "token confusion (acceptance 3)", `tests/unit/admin-auth.test.ts` |
+| 4 | proven (real Postgres) | `tests/integration/admin-schema.test.ts` "admin_app privilege boundary (acceptance 4)" |
+| 6 | proven (unit) | `tests/unit/admin-api.test.ts` "login, 2FA and enrolment (acceptance 6)"; enrolment binding on real Postgres in `tests/integration/admin-pg.test.ts` |
+| 9 | proven (unit) | `tests/unit/admin-api.test.ts` "EVERY mutating route writes an audit row"; denial rows in `tests/integration/admin-pg.test.ts` |
+| 1, 2, 5, 7, 8, 10 | not in A0 | A1 (1, 2, 7), A3 (5), A4 (8), 10 needs the A1 admin app |
+
 ## 13. Delivery plan
 
 | Phase | Scope | Exit criteria |

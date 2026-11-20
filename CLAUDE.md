@@ -41,6 +41,15 @@ Node >= 20.12। `package-lock.json` কমিট করা আছে এবং 
 
 **এখনো নেই:** পণ্য, স্টক/ব্যাচ, বিক্রি, বাকি, সিংক-এর endpoint। স্কিমায় এসবের টেবিল আছে (`products`, `stock_batches`, `stock_movements`, `customers`, `sales`, `sale_items`, `payments`, `store_counters`) কিন্তু `server/app.ts`-এ রুট নেই। ফ্রন্টএন্ড এখন এসব ডেটা শুধু ফোনের `localStorage`-এ রাখে। নতুন endpoint বানালে ফ্রন্টএন্ডের `src/lib/domain` ও `src/lib/store` যুক্তির সাথে এখানের `src/domain` মিলিয়ে রাখুন।
 
+## Platform admin panel (A0; `docs/ADMIN_PANEL_PRD.md`, ADR: `docs/adr/`)
+- **API:** `/v1/admin/*`, contract-first: `src/contract/admin-api.ts` (zod; একমাত্র সত্য-উৎস) → `server/routes/admin-handlers.ts` → dispatcher `server/routes/admin.ts` (token → DB session → rate limit → permission → step-up → validate → handler → **audit**)। প্রতিটি mutating route audit-row লেখে (denied সহ); টেস্ট না লিখলে ফেল করে। admin বার্তা ইংরেজিতে, শুধু দোকান-মালিকের বার্তা বাংলায়।
+- **Gate:** `ADMIN_JWT_SECRET` + `ADMIN_DATABASE_URL` + `ADMIN_TOTP_ENC_KEY` তিনটিই ঠিক থাকলে mount, নইলে `/v1/admin/*` = 404 (দোকান-API অক্ষত)। `ADMIN_APP_PASSWORD` শুধু লোকাল `.env`-এ, `db:migrate` `admin_app` রোলে বসায়।
+- **DB:** রোল `admin_app` (কোনো টেবিল-গ্রান্ট নেই), শুধু `admin_*` SECURITY DEFINER ফাংশন; অ্যাডমিন টেবিলে RLS ও `pos_app`-এর গ্রান্ট নেই। `sync_events.payload`, গ্রাহক, বিক্রি, ক্রয়মূল্য কখনো admin ফাংশনে ফেরে না। নতুন admin ফাংশন = নতুন মাইগ্রেশন; ফাংশনে `search_path` ও `REVOKE ... FROM PUBLIC` বাধ্যতামূলক (টেস্ট ধরে)।
+- **Auth:** নিজের secret ও `aud` (`admin` / `admin-pending`), role টোকেনে নেই (প্রতি অনুরোধে DB থেকে), session = `admin_sessions` সারি (idle ৩০ মি, সর্বোচ্চ ৮ ঘণ্টা), TOTP + recovery code, step-up (৫ মি)। শপ `verifyToken` `aud` থাকা যেকোনো টোকেন বাতিল করে।
+- **Shop enforcement:** `stores.status` প্রতি অনুরোধে `authenticate()`-এ (`src/domain/tenant-status.ts`): suspended → ৪০৩ `tenant_suspended` (শুধু login ও `GET /v1/me` ছাড়া), read_only → লেখায় ৪০৩ `tenant_read_only`। অবশ্যই **৪০৩** (৪০০/৪১৩ হলে ফোনের সিংক ইভেন্ট বাদ দিত)। নতুন দোকান `trial` (১৪ দিন), পুরনো `active`+`grandfathered`।
+- **CLI:** `npm run create-admin` (প্রথম super admin, `--reset` = break-glass); `npm run test:pg` = লোকাল throwaway Postgres-এ ইন্টিগ্রেশন টেস্ট (`embedded-postgres`, লাইভে কখনো নয়)।
+- নতুন admin route যোগ: আগে contract-এ এন্ট্রি (method/path/auth/action/mutating/audit/schema), তারপর handler, তারপর টেস্ট। রোলআউট ক্রম ও rollback: `docs/RUNBOOK.md` ৩ক।
+
 ## ডোমেইন নিয়ম (ভাঙা যাবে না)
 - টাকা **পূর্ণসংখ্যা পয়সায়**, স্টক **পিসে**। কখনো float নয়।
 - লগইন/নিবন্ধনের রেট লিমিট ডাটাবেসে (`auth_attempts` টেবিল, `auth_throttle()` SECURITY DEFINER ফাংশন): ফোন+IP, ফোন, IP আলাদা বাকেট। IP আসে `cf-connecting-ip` → `x-real-ip` → `x-forwarded-for`। `pos_app` রোলের শুধু প্রয়োজনীয় GRANT আছে (DELETE নেই); নতুন টেবিলে স্পষ্ট GRANT লাগবে। মাইগ্রেশন ০০২ লাইভে আগে প্রয়োগ করে তারপর কোড পুশ করতে হবে।

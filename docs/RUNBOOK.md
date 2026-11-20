@@ -56,6 +56,51 @@
 8. তারিখ, কে করল, কোন ফাইল, ব্যাকআপের নাম — একটি লাইনে এই ডকের শেষের "মাইগ্রেশন-খাতা"-য় লিখুন।
 - ⚠ লাইভে `main`-এর কতটা প্রয়োগ হয়েছে, এই কাজে কেউ এখনো সরাসরি যাচাই করেননি (ধাপ ২-এর প্রশ্ন চালিয়ে দেখুন)।
 
+## ৩ক. Admin panel (A0): rollout, rollback, secrets (English)
+Design: `docs/adr/0001`–`0006`. Spec: `docs/ADMIN_PANEL_PRD.md` §13, §17. Backend `main` auto-deploys and new code needs migration 012,
+so the order below is **mandatory**. Do not merge before step 5 is done. Nothing in A0 changes what a shop owner sees.
+
+**Rollout order**
+1. Backup (section ৪) and confirm the file opens. Confirm the restore drill (section ৯) status; it is still a go-live blocker.
+2. Read live state (section ৩, step 2): `011_store_rename.sql` applied, `012_admin_foundations.sql` not yet.
+3. In your **local `.env`** set `DATABASE_URL_UNPOOLED`, `POS_APP_PASSWORD` and the new `ADMIN_APP_PASSWORD` (>= 16 chars, your own). Run `npm run db:migrate`.
+   It applies 012 in one transaction and sets the `admin_app` password. Existing stores become `active` + `grandfathered`; new signups become `trial` (14 days).
+4. Verify in the SQL editor:
+   ```sql
+   SELECT status, grandfathered, count(*) FROM stores GROUP BY 1, 2;                     -- every existing store: active / true
+   SELECT rolname, rolbypassrls, rolsuper FROM pg_roles WHERE rolname IN ('pos_app','admin_app'); -- all false
+   SELECT count(*) FROM information_schema.table_privileges WHERE grantee = 'admin_app';  -- 0 (admin_app has no table grants)
+   SELECT relname, relrowsecurity FROM pg_class WHERE relname IN ('platform_admins','admin_sessions','admin_audit_log'); -- all true
+   ```
+5. Set the Supabase Edge **secrets** (names only here; you choose and store the values, never in chat or git):
+   `ADMIN_JWT_SECRET` (>= 32 random chars, different from `JWT_SECRET`), `ADMIN_TOTP_ENC_KEY` (32 random bytes, base64),
+   `ADMIN_DATABASE_URL` (Transaction pooler, user `admin_app.<PROJECT_REF>`, port 6543). Optional: `ADMIN_TOTP_ISSUER`.
+   All three or none: with any missing/invalid the admin surface is simply not mounted and the log says which name is wrong; shops are unaffected.
+6. Merge the backend branch to `main` (CI -> auto-deploy). Check `/health`, then a shop login and a new test signup (expect `trial` in `GET /v1/me`).
+   Check the admin gate: `GET /api/v1/admin/me` must answer **401** (route exists, no token); 404 means the secrets are not all set.
+7. Create the first super admin on your machine (never over HTTP): `npm run create-admin -- --email you@example.com --name "Your Name"`.
+   It needs `DATABASE_URL_UNPOOLED` and the **same** `ADMIN_TOTP_ENC_KEY` value in your local `.env`. Store the printed password and 2FA secret in a password manager.
+   Locked out later? `npm run create-admin -- --email you@example.com --reset`.
+8. `ALLOWED_ORIGINS` (operational step, PRD §17.5): when the admin site gets its own origin (phase A1) add that exact origin to the `ALLOWED_ORIGINS` secret
+   and redeploy; otherwise browsers block it. The admin site's CSP `connect-src` must name only the API origin. Idempotency keys travel in the JSON body, so no new CORS header is needed.
+
+**Rollback**
+- Code first (section ২). Old shop code runs fine on the new schema (the migration is additive), so the schema rollback is optional.
+- Schema: `db/rollback/012_down.sql`, run by hand with the `postgres` role after a backup. It **destroys** `platform_admins`, `admin_sessions` and `admin_audit_log`
+  and the per-store status/trial data. Use it only before the panel is in real use. It is not run by `db:migrate`.
+- The rollback **refuses** (error `P0001`) while `admin_audit_log` holds operator activity (any row not written by the CLI). Export the audit log first,
+  then re-run the file in the same session after `SET bipone.discard_admin_audit = 'yes';`. It also has a 5 s `lock_timeout` (it fails instead of queueing shop requests)
+  and drops only the 19 functions that 012 created, so a later phase's `admin_*` functions are never removed by name pattern.
+- Holding `ADMIN_DATABASE_URL` (the `admin_app` login) equals full admin-panel power (for example it can create a super admin) but exposes no shop data.
+  Keep it in Supabase secrets only, rotate it like `JWT_SECRET`, and never put it in a laptop `.env` that is shared or synced (ADR 0001).
+- Rehearse both directions on a **staging** project before the live run (restore into staging, apply 012, run the verification SQL, run the rollback, re-apply). Record the result in `docs/handover-evidence/`.
+
+**Operational notes**
+- A suspended or read-only shop gets HTTP 403 `tenant_suspended` / `tenant_read_only` on data routes; login and `GET /v1/me` still work. Offline phones keep their queue and deliver it after reactivation.
+- Until phase A1, status can only be changed by SQL (as `postgres`): `UPDATE stores SET status = 'suspended', status_message = '...' WHERE id = '...'`, and it is **not audited**. Treat that as an emergency path only.
+- Rotating `ADMIN_JWT_SECRET` signs every admin out. Rotating `ADMIN_TOTP_ENC_KEY` invalidates all stored 2FA secrets: every admin must be reset with `--reset` and re-enrol.
+- Admin audit rows cannot be edited or deleted by any role; keep >= 2 years (PRD A-10).
+
 ## ৪. ব্যাকআপ নেওয়া
 **প্রথমে আপনার Supabase প্ল্যান দেখুন (Dashboard → Database → Backups):**
 - Pro, Team ও Enterprise-এ প্রতিদিন স্বয়ংক্রিয় ব্যাকআপ; Pro-তে শেষ ৭ দিন ([Supabase: Database Backups](https://supabase.com/docs/guides/database/backups))।
