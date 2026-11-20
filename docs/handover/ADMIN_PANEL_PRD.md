@@ -306,3 +306,22 @@ Each phase = its own branch and PR per repo, backend first, CI green, migration 
 ## 16. Out of scope / future
 
 Multi-outlet management UI, reseller/partner portal, in-app chat, automated refunds, AI insights, public status page, native mobile admin app.
+
+---
+
+## 17. Addendum v1.1 — gaps found when reading this PRD against the code (2026-11-20)
+
+These items were missing or ambiguous in v1 and would stall the build. They are binding; where they conflict with §§5–13, this section wins.
+
+1. **Bootstrapping the first super admin (A-6 gap).** The admin API cannot create the first admin. Provide a local CLI `pos_backend/scripts/create-admin.ts` that runs with `DATABASE_URL_UNPOOLED` (the same way `db-migrate.ts` does), creates a `super` admin, and shows the TOTP enrolment secret **only in the operator's terminal**. It is also the break-glass path if the last super admin loses access. It is never exposed over HTTP and writes an audit row (`actor = cli`).
+2. **Admin recovery.** A super admin can reset another admin's 2FA and password; there is no self-service reset in v1. All resets are audit-logged and force re-enrolment at next login.
+3. **Default billing state of tenants.** Migration 012 backfills every **existing** store as `active` with `grandfathered = true` (no billing until Finance changes it in A3 go-live). The **signup** route must create new stores in `trial` with `trial_ends_at = now() + 14 days`, in the same transaction as the store row. Add both to the A0 tests.
+4. **Suspension must not drop offline work.** The shop sync engine keeps events queued on 403 `forbidden` and drops them on 400/413. The new errors `tenant_suspended` and `tenant_read_only` must be returned as **403** and treated by the engine exactly like `forbidden` (queue kept, status shown to the owner). Add a sync-engine test and keep the existing queue-visibility behaviour from the sync-robustness work.
+5. **CORS and CSP for the new origin.** The admin site's origin must be added to the backend `ALLOWED_ORIGINS` secret (an operational step for the owner, recorded in the RUNBOOK), and the admin `_headers` CSP `connect-src` must name only the API origin. Any custom request header (for example `Idempotency-Key`) must be added to the backend's `Access-Control-Allow-Headers`, which currently allows only `Authorization, Content-Type`. Prefer sending idempotency keys in the JSON body to avoid widening CORS.
+6. **Packaging.** Admin routes must be included in both runtimes: the Node server (`server/`) and the Edge Function bundle (`edge/build.mjs` → `supabase/functions/api/app.bundle.js`). A0 includes a test or script that fails if the bundle does not contain the admin routes.
+7. **Scheduling availability.** Before A6, verify whether `pg_cron` is available on the project's Supabase plan. If not, run dunning from a scheduled Edge Function or a scheduled GitHub Actions workflow calling an authenticated admin-system endpoint. The choice is recorded in an ADR.
+8. **Rate-limit buckets.** Admin limiter buckets use their own prefix (`admin:login:…`) so shop attempts can never lock out admins and the reverse.
+9. **One authoritative API contract.** Define `/v1/admin` once (OpenAPI 3.1 or shared zod schemas in a single file in `pos_backend`), generate or copy the types into `pos_admin`, and add a contract test in CI so the two repos cannot drift. Use the `contract-first` approach.
+10. **Shop-app text.** Every new Bangla string shown to shop owners (suspension, read-only, grace, announcements, support-session notice) needs an English entry in `pos_fontend/src/lib/i18n/en.ts`, or the shop app's i18n test fails. Build and test `pos_fontend` in a fresh clone, not beside a running `next dev`.
+11. **`pos_admin` repo hygiene.** Same as the other repos: committed `package-lock.json`, `npm ci` in CI, typecheck + lint + unit + build + Playwright in CI, `.gitignore` for `.env*`, no secrets in the bundle (only `NEXT_PUBLIC_ADMIN_API_URL`), Netlify (or chosen host) config with `_headers`, and a RUNBOOK section for deploy and rollback.
+12. **Time and money.** All timestamps are stored as `timestamptz` and displayed in Asia/Dhaka; all money is integer poisha; no floats anywhere in billing code.
