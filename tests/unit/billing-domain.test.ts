@@ -18,9 +18,11 @@ describe("periodFor", () => {
   })
 })
 
-describe("statusAfterPayment: a payment returns the shop to active from anywhere before deletion", () => {
-  const ok: StoreStatus[] = ["trial", "active", "grace", "read_only", "suspended", "pending_deletion", "cancelled"]
-  it.each(ok)("%s -> active", (s) => expect(statusAfterPayment(s)).toBe("active"))
+describe("statusAfterPayment: a payment lifts trial/grace/active/cancelled to active, but never an admin-held status", () => {
+  const lifted: StoreStatus[] = ["trial", "active", "grace", "cancelled"]
+  it.each(lifted)("%s -> active", (s) => expect(statusAfterPayment(s)).toBe("active"))
+  const held: StoreStatus[] = ["read_only", "suspended", "pending_deletion"]
+  it.each(held)("%s stays %s (an admin reactivates separately)", (s) => expect(statusAfterPayment(s)).toBe(s))
   it("refuses a deleted shop", () => expect(() => statusAfterPayment("deleted")).toThrowError(expect.objectContaining({ code: "invalid_transition" })))
   it("refuses an unknown status (fail closed)", () => expect(() => statusAfterPayment("bogus" as StoreStatus)).toThrow())
 })

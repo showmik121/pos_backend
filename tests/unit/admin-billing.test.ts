@@ -25,7 +25,7 @@ async function setup(role: "finance" | "super" | "support" | "viewer" = "finance
 }
 
 describe("acceptance 5: Finance records a manual payment", () => {
-  it("a suspended shop that pays is active again: the shop's own sync works, one ok audit row, one 30-day period", async () => {
+  it("a suspended shop that pays has the payment recorded but STAYS suspended; the admin reactivates it afterwards", async () => {
     const { h, shop, a, record, billing } = await setup()
     const boss = await h.actor("super", "boss@bipone.test", true)
     expect((await h.call("POST", `/v1/admin/tenants/${shop.storeId}/suspend`, { token: boss.token, body: { reason: "overdue for months" } })).status).toBe(200)
@@ -34,21 +34,32 @@ describe("acceptance 5: Finance records a manual payment", () => {
     const r = await record(pay(1))
     expect(r.status, r.raw).toBe(201)
     const out = RecordPaymentResultSchema.parse(r.json)
-    expect(out).toMatchObject({ replayed: false, fromStatus: "suspended", toStatus: "active" })
+    expect(out).toMatchObject({ replayed: false, fromStatus: "suspended", toStatus: "suspended" })
     expect(Date.parse(out.payment.periodEnd) - Date.parse(out.payment.periodStart)).toBe(30 * DAY)
     expect(out.payment.recordedByName).toBe("Name finance")
+    expect((await h.call("GET", "/v1/sync/pull?after=0", { token: shop.ownerToken })).status).toBe(403) // money alone does not switch the shop back on
 
-    expect((await h.call("GET", "/v1/sync/pull?after=0", { token: shop.ownerToken })).status).toBe(200)
     const rows = h.auditFor(shop.storeId).filter((x) => x.action === "admin.billing.payment_record")
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ outcome: "ok", adminId: a.id, targetType: "tenant", targetId: shop.storeId, storeId: shop.storeId })
-    expect(rows[0]!.after).toMatchObject({ status: "active", paymentId: out.payment.id, amountPoisha: BUSINESS.pricePoisha, method: "bkash", replayed: false })
+    expect(rows[0]!.after).toMatchObject({ status: "suspended", paymentId: out.payment.id, amountPoisha: BUSINESS.pricePoisha, method: "bkash", replayed: false })
     expect(JSON.stringify(rows[0])).not.toContain("TX-1-ABCDEF") // the transaction reference lives in the payment, not in the audit row
 
     const b = await billing()
-    expect(b).toMatchObject({ status: "active", grandfathered: false, currentPeriodEnd: out.payment.periodEnd })
+    expect(b).toMatchObject({ status: "suspended", grandfathered: false, currentPeriodEnd: out.payment.periodEnd })
     expect(b.plan?.code).toBe("business")
-    expect(b.events[0]).toMatchObject({ fromStatus: "suspended", toStatus: "active", adminName: "Name finance" })
+
+    // the separate, audited decision: a super admin reactivates, and the shop's own sync works again
+    expect((await h.call("POST", `/v1/admin/tenants/${shop.storeId}/reactivate`, { token: boss.token, body: { reason: "payment received" } })).status).toBe(200)
+    expect((await h.call("GET", "/v1/sync/pull?after=0", { token: shop.ownerToken })).status).toBe(200)
+  })
+
+  it("a shop in trial or grace that pays becomes active, with an event", async () => {
+    const { shop, record, billing } = await setup()
+    const out = RecordPaymentResultSchema.parse((await record(pay(1))).json)
+    expect(out.toStatus).toBe("active")
+    expect((await billing()).events[0]).toMatchObject({ toStatus: "active", reason: "Payment recorded" })
+    void shop
   })
 
   it("a second payment starts when the running period ends (nobody loses days by paying early)", async () => {

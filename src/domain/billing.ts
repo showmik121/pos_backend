@@ -53,10 +53,13 @@ export function paidUntilAfterVoid(remainingPaidAtMs: readonly number[], voidedP
   return end ?? voidedPaidAtMs
 }
 
-/** Payment at any point before deletion returns the shop to active (PRD §8.2). Unknown statuses fail closed. */
-export function statusAfterPayment(from: StoreStatus): "active" {
+/** Statuses an operator (or the dunning ladder) put a shop in: a payment is recorded but does NOT lift them. An admin reactivates the shop in a separate, audited step. */
+export const HELD_STATUSES: ReadonlySet<StoreStatus> = new Set<StoreStatus>(["read_only", "suspended", "pending_deletion"])
+
+/** A payment records the money; it only moves trial / grace / active / cancelled shops to active. Held shops keep their status until an admin reactivates them. Unknown or deleted fail closed. */
+export function statusAfterPayment(from: StoreStatus): StoreStatus {
   if (!isKnown(from) || from === "deleted") throw new DomainError("invalid_transition", "This shop cannot take a payment in its current state.")
-  return "active"
+  return HELD_STATUSES.has(from) ? from : "active"
 }
 
 export function assertPaymentAmount(planPricePoisha: number, amountPoisha: number): void {

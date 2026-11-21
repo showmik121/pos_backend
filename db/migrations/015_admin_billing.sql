@@ -152,7 +152,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
 $$;
 
 -- Record one payment. One payment = one 30-day period, starting when the running period ends (early payers lose no days) or at paid_at.
--- The shop returns to `active` from any status except deleted. Everything below runs under the shop's row lock, so two operators cannot interleave.
+-- trial / grace / active / cancelled become `active`; suspended / read_only / pending_deletion keep their status (an admin reactivates them separately); deleted is refused. Everything below runs under the shop's row lock, so two operators cannot interleave.
 -- Order of checks mirrors src/db/memory-admin.ts.
 CREATE FUNCTION admin_payment_record(
   p_store uuid, p_key text, p_amount bigint, p_method text, p_txn text, p_paid_at timestamptz, p_plan uuid, p_admin uuid
@@ -162,7 +162,7 @@ DECLARE
   v_status text; v_plan_of_store uuid; v_cpe timestamptz;
   v_sig text; v_prior_id uuid; v_prior_sig text;
   v_plan uuid; v_price bigint; v_active boolean;
-  v_paid timestamptz; v_start timestamptz; v_end timestamptz; v_id uuid; v_txn text;
+  v_paid timestamptz; v_start timestamptz; v_end timestamptz; v_id uuid; v_txn text; v_to text;
 BEGIN
   SELECT s.status, s.plan_id, s.current_period_end INTO v_status, v_plan_of_store, v_cpe FROM stores s WHERE s.id = p_store FOR NO KEY UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'tenant_not_found' USING ERRCODE = 'P0001'; END IF;
@@ -200,18 +200,22 @@ BEGIN
     RAISE EXCEPTION 'invalid_transition' USING ERRCODE = 'P0001';
   END IF;
 
+  -- a payment records the money; it lifts trial / grace / active / cancelled to active but NEVER an admin-held status (an admin reactivates those separately)
+  v_to := CASE WHEN v_status IN ('read_only', 'suspended', 'pending_deletion') THEN v_status ELSE 'active' END;
   v_start := CASE WHEN v_cpe IS NOT NULL AND v_cpe > v_paid THEN v_cpe ELSE v_paid END;
   v_end := v_start + interval '720 hours';   -- 30 x 24h exactly, whatever the session time zone
   INSERT INTO subscription_payments (store_id, plan_id, amount_poisha, method, txn_ref, paid_at, period_start, period_end, recorded_by, idempotency_key, request_sig)
     VALUES (p_store, v_plan, p_amount, p_method, v_txn, v_paid, v_start, v_end, p_admin, p_key, v_sig) RETURNING id INTO v_id;
-  UPDATE stores SET status = 'active', grandfathered = false, plan_id = v_plan, current_period_end = v_end, status_message = NULL, read_only_since = NULL,
-                    status_changed_at = CASE WHEN v_status <> 'active' THEN now() ELSE status_changed_at END
+  UPDATE stores SET status = v_to, grandfathered = false, plan_id = v_plan, current_period_end = v_end,
+                    status_message = CASE WHEN v_status <> v_to THEN NULL ELSE status_message END,
+                    read_only_since = CASE WHEN v_status <> v_to THEN NULL ELSE read_only_since END,
+                    status_changed_at = CASE WHEN v_status <> v_to THEN now() ELSE status_changed_at END
    WHERE id = p_store;
-  IF v_status <> 'active' THEN
-    INSERT INTO tenant_status_events (store_id, from_status, to_status, admin_id, reason, message) VALUES (p_store, v_status, 'active', p_admin, 'Payment recorded', NULL);
+  IF v_status <> v_to THEN
+    INSERT INTO tenant_status_events (store_id, from_status, to_status, admin_id, reason, message) VALUES (p_store, v_status, v_to, p_admin, 'Payment recorded', NULL);
   END IF;
-  INSERT INTO subscription_events (store_id, from_status, to_status, admin_id, reason) VALUES (p_store, v_status, 'active', p_admin, 'Payment recorded');
-  RETURN QUERY SELECT v_id, false, v_status, 'active'::text;
+  INSERT INTO subscription_events (store_id, from_status, to_status, admin_id, reason) VALUES (p_store, v_status, v_to, p_admin, 'Payment recorded');
+  RETURN QUERY SELECT v_id, false, v_status, v_to;
 END $$;
 
 -- Void never deletes. It does NOT change the shop's status; it only recomputes the paid-until date from the subscription_payments that remain.

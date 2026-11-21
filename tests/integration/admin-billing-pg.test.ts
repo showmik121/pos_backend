@@ -124,7 +124,7 @@ describe.skipIf(!ENABLED)("015: billing functions, parity with the memory repo, 
     expect(r1.a).toHaveProperty("ok")
     const [x, y] = [r1.a, r1.b] as Array<{ ok: { payment: Payment; replayed: boolean; fromStatus: string; toStatus: string } }>
     expect({ ...x.ok, payment: pay(x.ok.payment) }).toEqual({ ...y.ok, payment: pay(y.ok.payment) })
-    expect(x.ok).toMatchObject({ replayed: false, fromStatus: "suspended", toStatus: "active" })
+    expect(x.ok).toMatchObject({ replayed: false, fromStatus: "suspended", toStatus: "suspended" })
     expect(x.ok.payment.periodStart).toBe(paidAt)
     expect(Date.parse(x.ok.payment.periodEnd) - Date.parse(x.ok.payment.periodStart)).toBe(30 * DAY) // exactly 720 hours
 
@@ -142,10 +142,10 @@ describe.skipIf(!ENABLED)("015: billing functions, parity with the memory repo, 
     expect(v.b).toHaveProperty("ok")
     expect(view(await pg.tenantBilling(shop))).toEqual(view(await memory.tenantBilling(shop)))
     const after = (await pg.tenantBilling(shop))!
-    expect(after).toMatchObject({ status: "active", grandfathered: false, currentPeriodEnd: x.ok.payment.periodEnd })
+    expect(after).toMatchObject({ status: "suspended", grandfathered: false, currentPeriodEnd: x.ok.payment.periodEnd })
     expect(after.payments).toHaveLength(2) // void never deletes
     // the shop's own account activity shows the status change, with no internal reason column for it
-    expect((await sup`SELECT from_status, to_status FROM tenant_status_events WHERE store_id = ${shop}`)).toEqual([{ from_status: "suspended", to_status: "active" }])
+    expect((await sup`SELECT from_status, to_status FROM tenant_status_events WHERE store_id = ${shop}`)).toEqual([]) // status unchanged: no status event
   })
 
   it("every refusal has the same error code in SQL and in memory", async () => {

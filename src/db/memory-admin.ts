@@ -477,7 +477,7 @@ export function createMemoryAdmin(opts: { now?: () => number; onStatusChange?: (
       payments.push(rec)
       tenants.set(t.id, {
         ...t, status: to, grandfathered: false, planId: plan.id, currentPeriodEnd: rec.periodEnd,
-        statusMessage: null, readOnlySince: null, statusChangedAt: from === to ? t.statusChangedAt : at,
+        ...(from === to ? {} : { statusMessage: null, readOnlySince: null }), statusChangedAt: from === to ? t.statusChangedAt : at,
         history: from === to ? t.history : [...t.history, { at, fromStatus: from, toStatus: to, adminName: admins.get(input.adminId)?.name ?? null, reason: "Payment recorded", message: null }],
       })
       pushEvent(t.id, { at, fromStatus: from, toStatus: to, actor: "admin", adminName: admins.get(input.adminId)?.name ?? null, reason: "Payment recorded" })

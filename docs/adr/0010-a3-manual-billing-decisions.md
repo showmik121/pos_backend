@@ -8,7 +8,7 @@ Status: accepted (A3 backend + panel UI) · Date: 2026-11-21 · Spec: ADMIN_PANE
 ## 2. One payment = one 30-day period (exactly 720 hours)
 - Amount must be at least the plan price. No partial payments; overpayment is recorded as paid and still buys one period.
 - The period starts at the current period end if that is still in the future, otherwise at `paid_at`. Paying early therefore never wastes days.
-- A payment returns the shop to `active` from any status except `deleted`, and clears `grandfathered`. Rules live in `src/domain/billing.ts` (pure) and are mirrored in SQL; a parity test runs the memory repo and the real functions side by side.
+- A payment clears `grandfathered` and moves a shop in `trial`, `grace`, `active` or `cancelled` to `active`. A shop an admin (or the dunning ladder) put in `suspended`, `read_only` or `pending_deletion` KEEPS that status: the payment is recorded, and an admin reactivates the shop in a separate, audited step (owner decision, 2026-11-21: "payment is recorded, the admin activates afterwards"). `deleted` refuses the payment. Rules live in `src/domain/billing.ts` (pure) and are mirrored in SQL; a parity test runs the memory repo and the real functions side by side.
 
 ## 3. Void never deletes
 A void marks the row (`voided_at`, reason, admin) and recomputes `current_period_end` from the remaining non-voided payments. It does NOT change the shop status: suspending or reactivating stays a separate, audited decision (ADR 0003). Voiding twice is refused.
