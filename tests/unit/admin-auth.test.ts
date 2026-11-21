@@ -136,8 +136,9 @@ describe("admin permission matrix (PRD §3)", () => {
     expect(can("viewer", "tenant.reveal_phone")).toBe(false)
     expect(can("viewer", "health.read")).toBe(true)
     expect(can("viewer", "health.triage")).toBe(false)
+    expect(can("viewer", "billing.read")).toBe(true)
     for (const a of Object.keys(ADMIN_ACTIONS) as (keyof typeof ADMIN_ACTIONS)[]) {
-      if (a === "tenant.read" || a === "audit.read" || a === "health.read") continue
+      if (a === "tenant.read" || a === "audit.read" || a === "health.read" || a === "billing.read") continue
       expect(can("viewer", a), a).toBe(false)
     }
   })

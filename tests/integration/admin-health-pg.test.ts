@@ -240,6 +240,8 @@ describe.skipIf(!ENABLED)("014: health functions, parity with the memory repo, p
       }
     }
     {
+      expect(await run(sqlText)).toBe("P0001") // 015 (billing) is newer: 014_down refuses while it is applied
+      expect(await run(await readFile(path.join(process.cwd(), "db", "rollback", "015_down.sql"), "utf8"))).toBe("ok") // empty here
       const admin = (await sup<Array<{ id: string }>>`SELECT id FROM platform_admins LIMIT 1`)[0]!.id
       await pg.setErrorTriage({ fingerprint: FP1, status: "ignored", note: "keep me", adminId: admin })
       expect((await sup`SELECT count(*)::int AS n FROM error_triage`)[0]!.n).toBeGreaterThan(0)

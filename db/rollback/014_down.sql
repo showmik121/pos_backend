@@ -7,6 +7,14 @@
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 
+-- 015 (billing) is newer: it must be rolled back first (db/rollback/015_down.sql)
+DO $$
+BEGIN
+  IF to_regclass('public.subscription_payments') IS NOT NULL OR to_regprocedure('admin_billing_overview()') IS NOT NULL THEN
+    RAISE EXCEPTION 'migration 015 is still applied: run db/rollback/015_down.sql first (newest first)' USING ERRCODE = 'P0001';
+  END IF;
+END $$;
+
 DO $$
 BEGIN
   IF to_regclass('public.error_triage') IS NOT NULL AND EXISTS (SELECT 1 FROM error_triage) AND coalesce(current_setting('bipone.discard_error_triage', true), '') <> 'yes' THEN

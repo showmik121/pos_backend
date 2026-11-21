@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { DomainError } from "../domain/errors.js"
-import type { AuditRowDto, ClientErrorRow, ErrorStatus, TenantDetail, TenantNote, TenantRow } from "../contract/admin-api.js"
+import type { AuditRowDto, BillingOverview, ClientErrorRow, ErrorStatus, Payment, Plan, TenantBilling, TenantDetail, TenantNote, TenantRow } from "../contract/admin-api.js"
+import { assertPaidAt, assertPaymentAmount, extendTrial as extendTrialDate, normalizeTxnRef, paidUntilAfterVoid, periodFor, statusAfterPayment } from "../domain/billing.js"
 import { decodeAuditCursor, decodeOffsetCursor, encodeOffsetCursor, maskPhone, nextStatus } from "../domain/tenant-admin.js"
 import type { AdminRecord, AdminRepo, AdminSession, AdminSummary, AuditEntry } from "./admin.js"
 import type { StoreKind, StoreStatus } from "./types.js"
@@ -9,6 +10,24 @@ import type { StoreKind, StoreStatus } from "./types.js"
 // byte-order comparison, like Postgres with the C collation on hex/uuid text (localeCompare depends on the machine's locale)
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 const GONE: ReadonlySet<StoreStatus> = new Set<StoreStatus>(["deleted", "cancelled", "pending_deletion", "suspended"])
+
+const DAY_MS = 86_400_000
+const TRIALS_SOON_DAYS = 7
+const OVERVIEW_LIST_LIMIT = 50
+/** [start, end) of the Asia/Dhaka calendar month containing `ms` (UTC+6, no DST), as epoch ms */
+export function dhakaMonth(ms: number): { startMs: number; endMs: number } {
+  const shifted = new Date(ms + 6 * 3_600_000)
+  const y = shifted.getUTCFullYear()
+  const m = shifted.getUTCMonth()
+  return { startMs: Date.UTC(y, m, 1) - 6 * 3_600_000, endMs: Date.UTC(y, m + 1, 1) - 6 * 3_600_000 }
+}
+// Placeholder prices (BDT 499 / 1,199 / 2,499): PRD Q2 is still open. Same rows as db/migrations/015.
+export const DEFAULT_PLAN_ID = "00000000-0000-4000-8000-000000000a03"
+export const DEFAULT_PLANS: Plan[] = [
+  { id: "00000000-0000-4000-8000-000000000a01", code: "starter", name: "Starter", pricePoisha: 49_900, limits: { devices: 1, staff: 1 }, features: { reports: false, multi_device: false }, active: true },
+  { id: "00000000-0000-4000-8000-000000000a02", code: "growth", name: "Growth", pricePoisha: 119_900, limits: { devices: 2, staff: 3 }, features: { reports: true, multi_device: false }, active: true },
+  { id: "00000000-0000-4000-8000-000000000a03", code: "business", name: "Business", pricePoisha: 249_900, limits: { devices: 5, staff: 10 }, features: { reports: true, multi_device: true }, active: true },
+]
 
 // In-memory AdminRepo for unit tests. Mirrors the SQL functions in db/migrations/012 and 013 (same guards, same atomic semantics).
 export interface AuditRow extends AuditEntry {
@@ -31,6 +50,8 @@ export interface TenantSeed {
   statusMessage?: string | null
   /** number of registered devices (codes A, B, ...) */
   devices?: number
+  planId?: string | null
+  currentPeriodEnd?: string | null
 }
 
 interface TenantRec {
@@ -50,6 +71,8 @@ interface TenantRec {
   people: Array<{ name: string; phone: string; role: "owner" | "staff"; active: boolean; createdAt: string }>
   history: TenantDetail["statusHistory"]
   notes: TenantNote[]
+  planId: string | null
+  currentPeriodEnd: string | null
 }
 
 export function createMemoryAdmin(opts: { now?: () => number; onStatusChange?: (storeId: string, status: StoreStatus, message: string | null) => void } = {}): AdminRepo & {
@@ -76,6 +99,10 @@ export function createMemoryAdmin(opts: { now?: () => number; onStatusChange?: (
     return tr.status === "resolved" && e && Date.parse(e.lastAt) > Date.parse(tr.updatedAt) ? "open" : tr.status
   }
   let noteSeq = 0
+  // billing (A3). Default plans mirror db/migrations/015 (same ids, so a test can run against either repo).
+  const plans = new Map<string, Plan>(DEFAULT_PLANS.map((p) => [p.id, { ...p, limits: { ...p.limits }, features: { ...p.features } }]))
+  const payments: Array<Payment & { idemKey: string; sig: string }> = []
+  const subEvents = new Map<string, TenantBilling["events"]>()
   const admins = new Map<string, AdminRecord>()
   interface S { id: string; adminId: string; stage: "pending" | "active"; lastSeen: number; expiresAt: number; stepUpUntil: number | null; revokedAt: number | null; revokedReason: string | null }
   const sessions = new Map<string, S>()
@@ -96,6 +123,20 @@ export function createMemoryAdmin(opts: { now?: () => number; onStatusChange?: (
       deviceCount: t.devices.length, staffCount: t.people.filter((p) => p.role === "staff").length,
     }
   }
+  const clonePlan = (p: Plan): Plan => ({ ...p, limits: { ...p.limits }, features: { ...p.features } })
+  const publicPayment = (p: Payment & { idemKey: string; sig: string }): Payment => {
+    const { idemKey: _k, sig: _s, ...rest } = p
+    return rest
+  }
+  const pushEvent = (storeId: string, e: TenantBilling["events"][number]) => subEvents.set(storeId, [...(subEvents.get(storeId) ?? []), e])
+  const billingView = (t: TenantRec): TenantBilling => ({
+    storeId: t.id, status: t.status, grandfathered: t.grandfathered,
+    plan: t.planId && plans.has(t.planId) ? clonePlan(plans.get(t.planId)!) : null,
+    trialEndsAt: t.trialEndsAt, currentPeriodEnd: t.currentPeriodEnd,
+    payments: payments.filter((p) => p.storeId === t.id).sort((a, b) => Date.parse(b.recordedAt) - Date.parse(a.recordedAt) || cmp(b.id, a.id)).map(publicPayment),
+    events: [...(subEvents.get(t.id) ?? [])].reverse(),
+  })
+
   const revokeAll = (adminId: string, reason: string) => {
     for (const s of sessions.values()) if (s.adminId === adminId && s.revokedAt === null) { s.revokedAt = now(); s.revokedReason = reason }
   }
@@ -125,6 +166,7 @@ export function createMemoryAdmin(opts: { now?: () => number; onStatusChange?: (
         trialEndsAt: seed.trialEndsAt ?? (status === "trial" ? iso(now() + 14 * 86_400_000) : null),
         readOnlySince: null, statusMessage: seed.statusMessage ?? null, statusChangedAt: createdAt, lastSyncAt: seed.lastSyncAt ?? null,
         devices: Array.from({ length: seed.devices ?? 0 }, (_, i) => ({ code: String.fromCharCode(65 + i), createdAt })), people: [{ name: seed.ownerName ?? "Owner", phone: seed.ownerPhone, role: "owner", active: true, createdAt }], history: [], notes: [],
+        planId: seed.planId ?? null, currentPeriodEnd: seed.currentPeriodEnd ?? null,
       })
       return id
     },
@@ -376,6 +418,122 @@ export function createMemoryAdmin(opts: { now?: () => number; onStatusChange?: (
         signupsToday: all.filter((t) => dhakaDay(Date.parse(t.createdAt)) === dhakaDay(now())).length,
         stuckHours,
       }
+    },
+
+    // ---- billing (A3). Mirrors admin_billing_* in db/migrations/015. Money is integer poisha; revenue is computed from payment rows only.
+    async listPlans() {
+      return [...plans.values()].sort((a, b) => a.pricePoisha - b.pricePoisha || cmp(a.id, b.id)).map(clonePlan)
+    },
+    async updatePlan({ id, patch }) {
+      const before = plans.get(id)
+      if (!before) return null
+      const after: Plan = {
+        ...before,
+        name: patch.name ?? before.name,
+        pricePoisha: patch.pricePoisha ?? before.pricePoisha,
+        active: patch.active ?? before.active,
+        limits: { ...before.limits, ...patch.limits },
+        features: { ...before.features, ...patch.features },
+      }
+      plans.set(id, after)
+      return { before: clonePlan(before), after: clonePlan(after) }
+    },
+    async tenantBilling(storeId) {
+      const t = tenants.get(storeId)
+      return t ? billingView(t) : null
+    },
+    async recordPayment(input) {
+      const t = tenants.get(input.storeId)
+      if (!t) return null
+      const txnRef = normalizeTxnRef(input.txnRef)
+      if (!admins.get(input.adminId)?.active || !/^[A-Za-z0-9_-]{8,64}$/.test(input.idempotencyKey) || (input.txnRef ?? "").length > 60) {
+        throw new DomainError("invalid_input", "The request was not accepted. Check the values.")
+      }
+      const sig = JSON.stringify([input.amountPoisha, input.method, txnRef, input.paidAt === null ? null : Date.parse(input.paidAt), input.planId])
+      const prior = payments.find((p) => p.storeId === input.storeId && p.idemKey === input.idempotencyKey)
+      if (prior) {
+        if (prior.sig !== sig) throw new DomainError("idempotency_conflict", "This idempotency key was already used for a different payment.")
+        return { payment: publicPayment(prior), replayed: true, fromStatus: t.status, toStatus: t.status }
+      }
+      const plan = plans.get(input.planId ?? t.planId ?? DEFAULT_PLAN_ID)
+      if (!plan) throw new DomainError("not_found", "Plan not found.")
+      if (!plan.active) throw new DomainError("plan_inactive", "This plan is not active.")
+      if (input.method !== "cash" && txnRef === null) throw new DomainError("txn_ref_required", "A transaction reference is required for this payment method.")
+      const paidAtMs = input.paidAt === null ? now() : Date.parse(input.paidAt)
+      assertPaidAt(paidAtMs, now())
+      assertPaymentAmount(plan.pricePoisha, input.amountPoisha)
+      if (txnRef !== null && payments.some((p) => !p.voidedAt && p.method === input.method && p.txnRef === txnRef)) {
+        throw new DomainError("duplicate_txn", "A payment with this method and transaction reference is already recorded.")
+      }
+      const from = t.status
+      const to = statusAfterPayment(from)
+      const period = periodFor(t.currentPeriodEnd === null ? null : Date.parse(t.currentPeriodEnd), paidAtMs)
+      const at = iso(now())
+      const rec = {
+        id: randomUUID(), storeId: t.id, planId: plan.id, amountPoisha: input.amountPoisha, method: input.method, txnRef,
+        paidAt: iso(paidAtMs), periodStart: iso(period.startMs), periodEnd: iso(period.endMs), recordedAt: at,
+        recordedByName: admins.get(input.adminId)?.name ?? null, voidedAt: null, voidReason: null, idemKey: input.idempotencyKey, sig,
+      }
+      payments.push(rec)
+      tenants.set(t.id, {
+        ...t, status: to, grandfathered: false, planId: plan.id, currentPeriodEnd: rec.periodEnd,
+        statusMessage: null, readOnlySince: null, statusChangedAt: from === to ? t.statusChangedAt : at,
+        history: from === to ? t.history : [...t.history, { at, fromStatus: from, toStatus: to, adminName: admins.get(input.adminId)?.name ?? null, reason: "Payment recorded", message: null }],
+      })
+      pushEvent(t.id, { at, fromStatus: from, toStatus: to, actor: "admin", adminName: admins.get(input.adminId)?.name ?? null, reason: "Payment recorded" })
+      if (from !== to) opts.onStatusChange?.(t.id, to, null)
+      return { payment: publicPayment(rec), replayed: false, fromStatus: from, toStatus: to }
+    },
+    async voidPayment({ paymentId, reason, adminId }) {
+      const p = payments.find((x) => x.id === paymentId)
+      if (!p) return null
+      if (p.voidedAt) throw new DomainError("payment_already_voided", "This payment is already voided.")
+      if (!admins.get(adminId)?.active) throw new DomainError("invalid_input", "The request was not accepted. Check the values.")
+      p.voidedAt = iso(now())
+      p.voidReason = reason
+      const t = tenants.get(p.storeId)!
+      const remaining = payments.filter((x) => x.storeId === t.id && !x.voidedAt).map((x) => Date.parse(x.paidAt))
+      tenants.set(t.id, { ...t, currentPeriodEnd: iso(paidUntilAfterVoid(remaining, Date.parse(p.paidAt))) })
+      pushEvent(t.id, { at: p.voidedAt, fromStatus: t.status, toStatus: t.status, actor: "admin", adminName: admins.get(adminId)?.name ?? null, reason: `Payment voided: ${reason}` })
+      return { payment: publicPayment(p), storeId: t.id }
+    },
+    async extendTrial({ storeId, days, reason, adminId }) {
+      const t = tenants.get(storeId)
+      if (!t) return null
+      if (!admins.get(adminId)?.active) throw new DomainError("invalid_input", "The request was not accepted. Check the values.")
+      const next = extendTrialDate(t.status, t.trialEndsAt === null ? null : Date.parse(t.trialEndsAt), now(), days)
+      tenants.set(storeId, { ...t, trialEndsAt: iso(next) })
+      pushEvent(storeId, { at: iso(now()), fromStatus: t.status, toStatus: t.status, actor: "admin", adminName: admins.get(adminId)?.name ?? null, reason: `Trial extended by ${days} days: ${reason}` })
+      return { trialEndsAt: iso(next), status: t.status }
+    },
+    async billingOverview() {
+      const n = now()
+      const { startMs, endMs } = dhakaMonth(n)
+      const live = payments.filter((p) => !p.voidedAt)
+      const all = [...tenants.values()]
+      const byStatus: Record<string, number> = {}
+      for (const t of all) byStatus[t.status] = (byStatus[t.status] ?? 0) + 1
+      const thisMonth = live.filter((p) => Date.parse(p.paidAt) >= startMs && Date.parse(p.paidAt) < endMs)
+      const overdue = all
+        .map((t) => ({ t, due: t.grandfathered || t.status === "deleted" || t.status === "cancelled" ? null : (t.status === "trial" ? t.trialEndsAt : t.currentPeriodEnd) }))
+        .filter((x): x is { t: TenantRec; due: string } => x.due !== null && Math.floor((n - Date.parse(x.due)) / DAY_MS) >= 1)
+        .map((x) => ({ id: x.t.id, name: x.t.name, status: x.t.status, dueAt: x.due, daysOverdue: Math.floor((n - Date.parse(x.due)) / DAY_MS) }))
+        .sort((a, b) => b.daysOverdue - a.daysOverdue || cmp(a.id, b.id))
+      return {
+        mrrPoisha: live.filter((p) => Date.parse(p.periodStart) <= n && n < Date.parse(p.periodEnd)).reduce((s, p) => s + p.amountPoisha, 0),
+        collectedThisMonthPoisha: thisMonth.reduce((s, p) => s + p.amountPoisha, 0),
+        paymentsThisMonth: thisMonth.length,
+        voidedThisMonthPoisha: payments.filter((p) => p.voidedAt && Date.parse(p.voidedAt) >= startMs && Date.parse(p.voidedAt) < endMs).reduce((s, p) => s + p.amountPoisha, 0),
+        tenantsByStatus: byStatus,
+        grandfathered: all.filter((t) => t.grandfathered).length,
+        trialsEndingSoon: all
+          .filter((t) => t.status === "trial" && t.trialEndsAt !== null && Date.parse(t.trialEndsAt) >= n && Date.parse(t.trialEndsAt) < n + TRIALS_SOON_DAYS * DAY_MS)
+          .sort((a, b) => Date.parse(a.trialEndsAt!) - Date.parse(b.trialEndsAt!) || cmp(a.id, b.id))
+          .slice(0, OVERVIEW_LIST_LIMIT)
+          .map((t) => ({ id: t.id, name: t.name, trialEndsAt: t.trialEndsAt! })),
+        overdue: overdue.slice(0, OVERVIEW_LIST_LIMIT),
+        overdueTotal: overdue.length,
+      } satisfies BillingOverview
     },
 
     async throttle(bucket, max, windowSeconds) {

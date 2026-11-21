@@ -1,6 +1,7 @@
 import type {
   AuditListQuery, AuditRowDto, ClientErrorRow, ClientErrorsQuery, Dashboard, ErrorStatus, ErrorTriageResult, NegativeStockQuery, NegativeStockRow, StatusChangeResult,
   SyncHealthQuery, SyncHealthRow, TenantDetail, TenantListQuery, TenantNote, TenantRow,
+  BillingOverview, Payment, PaymentMethod, Plan, RecordPaymentResult, TenantBilling,
 } from "../contract/admin-api.js"
 import type { AdminRole } from "../domain/admin-permissions.js"
 import type { TenantStatusAction } from "../domain/tenant-admin.js"
@@ -119,6 +120,23 @@ export interface AdminRepo {
   /** stores with a live batch below zero, most units short first */
   negativeStock(q: NegativeStockQuery): Promise<{ tenants: NegativeStockRow[]; total: number }>
   dashboard(stuckHours: number): Promise<Dashboard>
+
+  // ---- billing (A3, manual). Every write is atomic (row-locked) and keeps payments append-only: a payment is voided, never deleted.
+  // Errors (DomainError): not_found, invalid_transition, invalid_amount, amount_below_price, txn_ref_required, paid_in_future, duplicate_txn,
+  // idempotency_conflict, plan_inactive, payment_already_voided, trial_cap, invalid_input.
+  listPlans(): Promise<Plan[]>
+  /** null if no such plan; `before`/`after` feed the audit row */
+  updatePlan(input: { id: string; patch: { name?: string; pricePoisha?: number; active?: boolean; limits?: Record<string, number>; features?: Record<string, boolean> }; adminId: string }): Promise<{ before: Plan; after: Plan } | null>
+  /** null if no such tenant */
+  tenantBilling(storeId: string): Promise<TenantBilling | null>
+  /** null if no such tenant. The same idempotency key + same request returns the first result (`replayed`); a different request under that key is refused. */
+  recordPayment(input: { storeId: string; idempotencyKey: string; amountPoisha: number; method: PaymentMethod; txnRef: string | null; paidAt: string | null; planId: string | null; adminId: string }): Promise<RecordPaymentResult | null>
+  /** null if no such payment. Does NOT change the shop's status; it only recomputes the paid-until date from the payments that remain. */
+  voidPayment(input: { paymentId: string; reason: string; adminId: string }): Promise<{ payment: Payment; storeId: string } | null>
+  /** null if no such tenant */
+  extendTrial(input: { storeId: string; days: number; reason: string; adminId: string }): Promise<{ trialEndsAt: string; status: TenantBilling["status"] } | null>
+  /** computed from payment rows (and shop statuses) only, so it reconciles with them */
+  billingOverview(): Promise<BillingOverview>
 
   /** bucket is namespaced "admin:" inside the repo so shop attempts can never lock admins out (§17.8) */
   throttle(bucket: string, max: number, windowSeconds: number): Promise<boolean>

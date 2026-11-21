@@ -82,6 +82,9 @@ async function checkTotp(ctx: AdminCtx, admin: AdminRecord, code: string): Promi
 const tenantNotFound = () => new DomainError("not_found", "Tenant not found.")
 const tenantAudit = (storeId: string, extra: AuditExtra = {}): AuditExtra => ({ targetType: "tenant", targetId: storeId, storeId, ...extra })
 
+const planAudit = (p: { name: string; pricePoisha: number; active: boolean; limits: Record<string, number>; features: Record<string, boolean> }) =>
+  ({ name: p.name, pricePoisha: p.pricePoisha, active: p.active, limits: p.limits, features: p.features })
+
 async function changeStatus(
   ctx: AdminCtx, session: AdminSession, storeId: string, action: TenantStatusAction, reason: string, message: string | null,
 ): Promise<{ body: StatusChangeResult; audit: AuditExtra }> {
@@ -295,6 +298,53 @@ export const adminHandlers: Handlers = {
   },
   async "dashboard.get"({ ctx }) {
     return { body: await ctx.repo.dashboard(DEFAULT_STUCK_HOURS) }
+  },
+
+  // ---- billing (A3). Manual: a person records money that arrived outside the app. Nothing here touches shop business data or cost prices.
+  async "billing.plans.list"({ ctx }) {
+    return { body: { plans: await ctx.repo.listPlans() } }
+  },
+  async "billing.plans.update"({ ctx, body, params, session }) {
+    const { reason, ...patch } = body
+    const r = await ctx.repo.updatePlan({ id: params.id!, patch, adminId: session!.adminId })
+    if (!r) throw new DomainError("not_found", "Plan not found.")
+    return { body: { plan: r.after }, audit: { targetType: "plan", targetId: r.after.id, reason, before: planAudit(r.before), after: planAudit(r.after) } }
+  },
+  async "billing.tenant"({ ctx, params }) {
+    const b = await ctx.repo.tenantBilling(params.id!)
+    if (!b) throw tenantNotFound()
+    return { body: b }
+  },
+  // The transaction reference stays out of the audit row (it is in the payment record); the row says who recorded how much for which shop.
+  async "billing.payments.record"({ ctx, body, params, session }) {
+    const r = await ctx.repo.recordPayment({
+      storeId: params.id!, idempotencyKey: body.idempotencyKey, amountPoisha: body.amountPoisha, method: body.method,
+      txnRef: body.txnRef ?? null, paidAt: body.paidAt ?? null, planId: body.planId ?? null, adminId: session!.adminId,
+    })
+    if (!r) throw tenantNotFound()
+    return {
+      body: r,
+      audit: tenantAudit(params.id!, {
+        before: { status: r.fromStatus },
+        after: { status: r.toStatus, paymentId: r.payment.id, amountPoisha: r.payment.amountPoisha, method: r.payment.method, paidAt: r.payment.paidAt, periodStart: r.payment.periodStart, periodEnd: r.payment.periodEnd, replayed: r.replayed },
+      }),
+    }
+  },
+  async "billing.payments.void"({ ctx, body, params, session }) {
+    const r = await ctx.repo.voidPayment({ paymentId: params.id!, reason: body.reason, adminId: session!.adminId })
+    if (!r) throw new DomainError("not_found", "Payment not found.")
+    return {
+      body: r,
+      audit: { targetType: "payment", targetId: r.payment.id, storeId: r.storeId, reason: body.reason, before: { voided: false }, after: { voided: true, amountPoisha: r.payment.amountPoisha } },
+    }
+  },
+  async "billing.trial.extend"({ ctx, body, params, session }) {
+    const r = await ctx.repo.extendTrial({ storeId: params.id!, days: body.days, reason: body.reason, adminId: session!.adminId })
+    if (!r) throw tenantNotFound()
+    return { body: r, audit: tenantAudit(params.id!, { reason: body.reason, after: { trialEndsAt: r.trialEndsAt, extendedByDays: body.days } }) }
+  },
+  async "billing.overview"({ ctx }) {
+    return { body: await ctx.repo.billingOverview() }
   },
 
   async "audit.list"({ ctx, body }) {

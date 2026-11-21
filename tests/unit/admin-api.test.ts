@@ -420,6 +420,15 @@ describe("permissions, step-up and the audit trail (acceptance 1, 9)", () => {
     const hTriage = await h.call("POST", `/v1/admin/health/errors/${fp}/triage`, { token, body: { status: "resolved" } })
     const hNeg = await h.call("GET", "/v1/admin/health/negative-stock", { token })
     const dash = await h.call("GET", "/v1/admin/dashboard", { token })
+    // A3 billing routes: record a payment on the suspended shop, void it, extend a trial, read everything (super, with step-up)
+    const trialId = h.adminRepo.seedTenant({ name: "Trial Shop", ownerPhone: "01711000098", status: "trial" })
+    const plans = await h.call("GET", "/v1/admin/plans", { token })
+    const planUpdate = await h.call("PATCH", `/v1/admin/plans/${plans.json.plans[0].id}`, { token, body: { name: "Starter 2", reason: "rename" } })
+    const record = await h.call("POST", tp("/payments"), { token, body: { idempotencyKey: "audit-flow-0001", amountPoisha: 249_900, method: "bkash", txnRef: "TX-AUDIT-1" } })
+    const bTenant = await h.call("GET", tp("/billing"), { token })
+    const bOverview = await h.call("GET", "/v1/admin/billing/overview", { token })
+    const trialExt = await h.call("POST", `/v1/admin/tenants/${trialId}/trial/extend`, { token, body: { days: 7, reason: "setup help" } })
+    const voided = await h.call("POST", `/v1/admin/payments/${record.json.payment.id}/void`, { token, body: { reason: "wrong shop" } })
     const out = await h.call("POST", "/v1/admin/auth/logout", { token, body: {} })
 
     const byId: Record<string, { status: number; json: unknown }> = {
@@ -428,6 +437,8 @@ describe("permissions, step-up and the audit trail (acceptance 1, 9)", () => {
       "tenants.list": tList, "tenants.get": tGet, "tenants.revealPhone": reveal, "tenants.suspend": suspend, "tenants.readOnly": readOnly, "tenants.reactivate": reactivate,
       "tenants.notes.list": noteList, "tenants.notes.add": noteAdd, "audit.list": auditList,
       "health.sync": hSync, "health.errors": hErrors, "health.errors.triage": hTriage, "health.negativeStock": hNeg, "dashboard.get": dash,
+      "billing.plans.list": plans, "billing.plans.update": planUpdate, "billing.payments.record": record, "billing.tenant": bTenant,
+      "billing.overview": bOverview, "billing.trial.extend": trialExt, "billing.payments.void": voided,
     }
     for (const id of ADMIN_ROUTE_IDS) {
       const c = adminContract[id]

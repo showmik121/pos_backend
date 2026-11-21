@@ -45,7 +45,7 @@ export interface RouteContract {
   /** audit action name; required when mutating */
   audit: string | null
   /** what `:id` refers to; drives the default audit target, so a denied attempt on a tenant still records which tenant */
-  target?: "admin" | "tenant" | "client_error"
+  target?: "admin" | "tenant" | "client_error" | "plan" | "payment"
   // a path may also carry `:fingerprint` (32 hex chars, a client_errors row); it is the audit target of that route, denied attempts included
   /** success status code */
   status: number
@@ -230,6 +230,114 @@ export const DashboardSchema = z.object({
 })
 export type Dashboard = z.infer<typeof DashboardSchema>
 
+
+// ---------------------------------------------------------------- billing (A3, manual)
+// Money is integer poisha. Revenue numbers are computed from payment rows only, so they always reconcile with them (PRD §14).
+export const PaymentMethodSchema = z.enum(["bkash", "nagad", "rocket", "bank", "cash"])
+export type PaymentMethod = z.infer<typeof PaymentMethodSchema>
+
+export const PlanSchema = z.object({
+  id: z.uuid(),
+  code: z.string(),
+  name: z.string(),
+  pricePoisha: z.number().int().nonnegative(),
+  limits: z.record(z.string(), z.number().int().nonnegative()),
+  features: z.record(z.string(), z.boolean()),
+  active: z.boolean(),
+})
+export type Plan = z.infer<typeof PlanSchema>
+
+// a price change applies to NEW billing periods only: nothing already recorded is touched
+export const PlanUpdateRequestSchema = z.object({
+  name: z.string().trim().min(1).max(60).optional(),
+  pricePoisha: z.number().int().min(0).max(100_000_000).optional(),
+  active: z.boolean().optional(),
+  limits: z.record(z.string().regex(/^[a-z_]{1,30}$/), z.number().int().min(0).max(1_000_000)).optional(),
+  features: z.record(z.string().regex(/^[a-z_]{1,30}$/), z.boolean()).optional(),
+  reason: StatusReason,
+})
+
+const IdempotencyKey = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/, "idempotency key")
+export const RecordPaymentRequestSchema = z.object({
+  /** the same key with the same body returns the first result; a different body under the same key is refused */
+  idempotencyKey: IdempotencyKey,
+  amountPoisha: z.number().int().positive().max(100_000_000),
+  method: PaymentMethodSchema,
+  /** bKash/Nagad/Rocket transaction id or bank reference; required for everything except cash */
+  txnRef: z.string().trim().min(1).max(60).optional(),
+  /** when the money arrived (ISO-8601); defaults to now; not in the future */
+  paidAt: z.iso.datetime().optional(),
+  /** plan this payment is for; defaults to the shop's plan, else Business */
+  planId: z.uuid().optional(),
+})
+export const PaymentSchema = z.object({
+  id: z.uuid(),
+  storeId: z.uuid(),
+  planId: z.uuid().nullable(),
+  amountPoisha: z.number().int().positive(),
+  method: PaymentMethodSchema,
+  txnRef: z.string().nullable(),
+  paidAt: z.string(),
+  periodStart: z.string(),
+  periodEnd: z.string(),
+  recordedAt: z.string(),
+  recordedByName: z.string().nullable(),
+  voidedAt: z.string().nullable(),
+  voidReason: z.string().nullable(),
+})
+export type Payment = z.infer<typeof PaymentSchema>
+export const RecordPaymentResultSchema = z.object({
+  payment: PaymentSchema,
+  /** true when the idempotency key had been used before: nothing new was applied */
+  replayed: z.boolean(),
+  fromStatus: StoreStatusSchema,
+  toStatus: StoreStatusSchema,
+})
+export type RecordPaymentResult = z.infer<typeof RecordPaymentResultSchema>
+
+export const VoidPaymentRequestSchema = z.object({ reason: StatusReason })
+export const VoidPaymentResultSchema = z.object({ payment: PaymentSchema, storeId: z.uuid() })
+
+export const TrialExtendRequestSchema = z.object({ days: z.number().int().min(1).max(30), reason: StatusReason })
+export const TrialExtendResultSchema = z.object({ trialEndsAt: z.string(), status: StoreStatusSchema })
+
+export const SubscriptionEventSchema = z.object({
+  at: z.string(),
+  fromStatus: StoreStatusSchema.nullable(),
+  toStatus: StoreStatusSchema,
+  actor: z.string(),
+  adminName: z.string().nullable(),
+  reason: z.string(),
+})
+export const TenantBillingSchema = z.object({
+  storeId: z.uuid(),
+  status: StoreStatusSchema,
+  grandfathered: z.boolean(),
+  plan: PlanSchema.nullable(),
+  trialEndsAt: z.string().nullable(),
+  /** end of the paid period that is running (or ran last); null if the shop never paid */
+  currentPeriodEnd: z.string().nullable(),
+  payments: z.array(PaymentSchema),
+  events: z.array(SubscriptionEventSchema),
+})
+export type TenantBilling = z.infer<typeof TenantBillingSchema>
+
+export const BillingOverviewSchema = z.object({
+  /** sum of the non-voided payments whose period covers now */
+  mrrPoisha: z.number().int().nonnegative(),
+  /** sum of the non-voided payments paid in the current Asia/Dhaka month, and how many */
+  collectedThisMonthPoisha: z.number().int().nonnegative(),
+  paymentsThisMonth: z.number().int().nonnegative(),
+  voidedThisMonthPoisha: z.number().int().nonnegative(),
+  tenantsByStatus: z.record(z.string(), z.number().int().nonnegative()),
+  /** shops that are not billed yet (existing shops, until Finance starts billing them) */
+  grandfathered: z.number().int().nonnegative(),
+  trialsEndingSoon: z.array(z.object({ id: z.uuid(), name: z.string(), trialEndsAt: z.string() })),
+  overdue: z.array(z.object({ id: z.uuid(), name: z.string(), status: StoreStatusSchema, dueAt: z.string(), daysOverdue: z.number().int().positive() })),
+  overdueTotal: z.number().int().nonnegative(),
+})
+export type BillingOverview = z.infer<typeof BillingOverviewSchema>
+
 export const adminContract = {
   "auth.login": {
     method: "POST", path: "/auth/login", auth: "none", action: null, mutating: true, audit: "admin.login", status: 200,
@@ -370,6 +478,42 @@ export const adminContract = {
     method: "GET", path: "/dashboard", auth: "session", action: "health.read", mutating: false, audit: null, status: 200,
     request: Empty,
     response: DashboardSchema,
+  },
+  // ---- billing (A3)
+  "billing.plans.list": {
+    method: "GET", path: "/plans", auth: "session", action: "billing.read", mutating: false, audit: null, status: 200,
+    request: Empty,
+    response: z.object({ plans: z.array(PlanSchema) }),
+  },
+  "billing.plans.update": {
+    method: "PATCH", path: "/plans/:id", auth: "session", action: "billing.plan.edit", target: "plan", mutating: true, audit: "admin.billing.plan_update", status: 200,
+    request: PlanUpdateRequestSchema,
+    response: z.object({ plan: PlanSchema }),
+  },
+  "billing.tenant": {
+    method: "GET", path: "/tenants/:id/billing", auth: "session", action: "billing.read", target: "tenant", mutating: false, audit: null, status: 200,
+    request: Empty,
+    response: TenantBillingSchema,
+  },
+  "billing.payments.record": {
+    method: "POST", path: "/tenants/:id/payments", auth: "session", action: "billing.payment.record", target: "tenant", mutating: true, audit: "admin.billing.payment_record", status: 201,
+    request: RecordPaymentRequestSchema,
+    response: RecordPaymentResultSchema,
+  },
+  "billing.payments.void": {
+    method: "POST", path: "/payments/:id/void", auth: "session", action: "billing.payment.void", target: "payment", mutating: true, audit: "admin.billing.payment_void", status: 200,
+    request: VoidPaymentRequestSchema,
+    response: VoidPaymentResultSchema,
+  },
+  "billing.trial.extend": {
+    method: "POST", path: "/tenants/:id/trial/extend", auth: "session", action: "billing.trial.extend", target: "tenant", mutating: true, audit: "admin.billing.trial_extend", status: 200,
+    request: TrialExtendRequestSchema,
+    response: TrialExtendResultSchema,
+  },
+  "billing.overview": {
+    method: "GET", path: "/billing/overview", auth: "session", action: "billing.read", mutating: false, audit: null, status: 200,
+    request: Empty,
+    response: BillingOverviewSchema,
   },
 } as const satisfies Record<string, RouteContract>
 

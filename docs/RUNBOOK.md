@@ -143,6 +143,22 @@ Design: `docs/adr/0009`. Migration `014_admin_health.sql`, rollback `db/rollback
 
 **Rollback (newest first):** `014_down.sql` -> `013_down.sql` -> `012_down.sql`. 014_down refuses while `error_triage` has rows (export, then `SET bipone.discard_error_triage = 'yes'`). 013_down refuses while 014 is applied. Revert or remove the 014 file from the deployed commit first, or the next `db:migrate` re-applies it.
 
+## ৩ঘ. Admin panel (A3): manual billing rollout and rollback (English)
+Design: `docs/adr/0010`. Migration `015_admin_billing.sql`, rollback `db/rollback/015_down.sql`. Needs 012, 013 and 014 applied first.
+
+**Rollout:** the shop API calls nothing in 015 (no order hazard for shops). It adds `plans`, `subscription_payments`, `subscription_events`, `stores.current_period_end` and ten `admin_*` functions. The three tables have RLS on and no grants to `pos_app`.
+1. Backup (section ৪). Apply 015 with `npm run db:migrate` (one transaction). Verify:
+   ```sql
+   SELECT count(*) FROM information_schema.table_privileges WHERE grantee = 'admin_app';      -- still 0
+   SELECT count(*) FROM plans;                                                                 -- 3 (placeholder prices)
+   SELECT has_function_privilege('admin_app', 'admin_billing_overview()', 'EXECUTE');         -- true
+   SELECT has_function_privilege('pos_app',   'admin_billing_overview()', 'EXECUTE');         -- false
+   ```
+2. In the panel (Billing > Plans) a Super sets the REAL prices (PRD Q2 is unconfirmed). Do not record a real payment before that.
+3. Set the Actions variable `APPLIED_MIGRATION=15` (ADR 0008), then merge/deploy.
+
+**Rollback (newest first):** `015_down.sql` -> `014_down.sql` -> `013_down.sql` -> `012_down.sql`. 015_down refuses while `subscription_payments` or `subscription_events` hold rows (they are financial records; export first, then `SET bipone.discard_billing = 'yes'`). 014_down refuses while 015 is applied. Revert or remove the 015 file from the deployed commit first, or the next `db:migrate` re-applies it.
+
 ## ৪. ব্যাকআপ নেওয়া
 **প্রথমে আপনার Supabase প্ল্যান দেখুন (Dashboard → Database → Backups):**
 - Pro, Team ও Enterprise-এ প্রতিদিন স্বয়ংক্রিয় ব্যাকআপ; Pro-তে শেষ ৭ দিন ([Supabase: Database Backups](https://supabase.com/docs/guides/database/backups))।

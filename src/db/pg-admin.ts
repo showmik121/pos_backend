@@ -1,6 +1,6 @@
 import postgres from "postgres"
 import { DomainError } from "../domain/errors.js"
-import type { AuditRowDto, TenantDetail, TenantNote, TenantRow } from "../contract/admin-api.js"
+import type { AuditRowDto, BillingOverview, Payment, PaymentMethod, Plan, TenantBilling, TenantDetail, TenantNote, TenantRow } from "../contract/admin-api.js"
 import { decodeAuditCursor, decodeOffsetCursor, encodeOffsetCursor } from "../domain/tenant-admin.js"
 import type { AdminRecord, AdminRepo, AdminSession, AdminSummary, AuditEntry } from "./admin.js"
 import type { StoreKind, StoreStatus } from "./types.js"
@@ -25,7 +25,18 @@ interface AdminRow {
   created_at: Date
 }
 
+interface PaymentRow {
+  id: string; store_id: string; plan_id: string | null; amount_poisha: string | number; method: PaymentMethod; txn_ref: string | null; paid_at: Date
+  period_start: Date; period_end: Date; recorded_at: Date; recorded_by_name: string | null; voided_at: Date | null; void_reason: string | null
+}
 const iso = (d: Date | string | null): string | null => (d === null ? null : new Date(d).toISOString())
+const toPayment = (r: PaymentRow): Payment => ({
+  id: r.id, storeId: r.store_id, planId: r.plan_id, amountPoisha: Number(r.amount_poisha), method: r.method, txnRef: r.txn_ref,
+  paidAt: iso(r.paid_at) as string, periodStart: iso(r.period_start) as string, periodEnd: iso(r.period_end) as string,
+  recordedAt: iso(r.recorded_at) as string, recordedByName: r.recorded_by_name, voidedAt: iso(r.voided_at), voidReason: r.void_reason,
+})
+interface PlanRow { id: string; code: string; name: string; price_poisha: string | number; limits: Record<string, number>; features: Record<string, boolean>; active: boolean }
+const toPlan = (r: PlanRow): Plan => ({ id: r.id, code: r.code, name: r.name, pricePoisha: Number(r.price_poisha), limits: r.limits, features: r.features, active: r.active })
 const toRecord = (r: AdminRow): AdminRecord => ({
   id: r.id, email: r.email, name: r.name, role: r.role, passwordHash: r.password_hash, totpSecretEnc: r.totp_secret_enc,
   enrolled: r.totp_confirmed_at !== null, totpLastStep: r.totp_last_step === null ? null : Number(r.totp_last_step),
@@ -33,8 +44,35 @@ const toRecord = (r: AdminRow): AdminRecord => ({
   lastLoginAt: iso(r.last_login_at), createdAt: iso(r.created_at) as string,
 })
 
+// Billing errors raised by db/migrations/015 (message = code, ERRCODE P0001) and the DomainError each becomes.
+const BILLING_ERRORS: Record<string, [code: string, message: string]> = {
+  plan_not_found: ["not_found", "Plan not found."],
+  payment_not_found: ["not_found", "Payment not found."],
+  idempotency_conflict: ["idempotency_conflict", "This idempotency key was already used for a different payment."],
+  duplicate_txn: ["duplicate_txn", "A payment with this method and transaction reference is already recorded."],
+  payment_already_voided: ["payment_already_voided", "This payment is already voided."],
+  plan_inactive: ["plan_inactive", "This plan is not active."],
+  trial_cap: ["trial_cap", "A trial cannot end more than 60 days from now."],
+  invalid_amount: ["invalid_amount", "The amount must be a whole number of poisha, above zero."],
+  amount_below_price: ["amount_below_price", "The amount is below the plan price. Partial payments are not supported."],
+  txn_ref_required: ["txn_ref_required", "A transaction reference is required for this payment method."],
+  paid_in_future: ["paid_in_future", "The payment date cannot be in the future."],
+  paid_too_old: ["paid_too_old", "A payment cannot be dated more than 30 days back."],
+  invalid_input: ["invalid_input", "The request was not accepted. Check the values."],
+}
+
 function mapError(err: unknown): unknown {
-  const e = err as { code?: string; message?: string } | null
+  const e = err as { code?: string; message?: string; constraint_name?: string } | null
+  if (e?.code === "23505" && e.constraint_name === "subpay_txn_unique") {
+    return new DomainError("duplicate_txn", "A payment with this method and transaction reference is already recorded.")
+  }
+  if (e?.code === "P0001" && e.message !== undefined && BILLING_ERRORS[e.message]) {
+    const [code, message] = BILLING_ERRORS[e.message]!
+    return new DomainError(code, message)
+  }
+  // a CHECK / NOT NULL violation from an admin_* function is bad input, not a server fault; a lock timeout is "try again"
+  if (e?.code === "23514" || e?.code === "23502") return new DomainError("invalid_input", "The request was not accepted. Check the values.")
+  if (e?.code === "55P03") return new DomainError("busy", "Another change to this shop is in progress. Try again in a moment.")
   if (e?.code === "23505") return new DomainError("email_taken", "এই ইমেইলে আগেই অ্যাডমিন আছে")
   if (e?.code === "P0001" && e.message === "last_super_admin") {
     return new DomainError("last_super_admin", "শেষ সুপার অ্যাডমিনকে সরানো বা নামানো যাবে না")
@@ -280,6 +318,83 @@ export function createPgAdmin(opts: { connectionString: string; max?: number }):
       return {
         tenantsByStatus: r.by_status, stuckSync: Number(r.stuck_sync), newErrors: Number(r.new_errors),
         negativeStockTenants: Number(r.negative_tenants), signupsToday: Number(r.signups_today), stuckHours,
+      }
+    },
+
+    // ---- billing (A3): db/migrations/015. Money is bigint in SQL; every amount here stays below 2^53 (the DB caps a payment at 100,000,000).
+    async listPlans() {
+      return (await run(sql<PlanRow[]>`SELECT * FROM admin_plans_list()`)).map(toPlan)
+    },
+    async updatePlan({ id, patch }) {
+      try {
+        const rows = await run(sql<Array<{ before: Plan; after: Plan }>>`
+          SELECT * FROM admin_plan_update(${id}, ${patch.name ?? null}, ${patch.pricePoisha ?? null}, ${patch.active ?? null},
+                                          ${patch.limits ? sql.json(patch.limits) : null}, ${patch.features ? sql.json(patch.features) : null})`)
+        return { before: rows[0]!.before, after: rows[0]!.after }
+      } catch (err) {
+        if (err instanceof DomainError && err.code === "not_found") return null
+        throw err
+      }
+    },
+    async tenantBilling(storeId) {
+      try {
+        const [header, pays, events] = await Promise.all([
+          run(sql<Array<{ status: StoreStatus; grandfathered: boolean; trial_ends_at: Date | null; current_period_end: Date | null; plan: Plan | null }>>`SELECT * FROM admin_billing_header(${storeId})`),
+          run(sql<PaymentRow[]>`SELECT * FROM admin_billing_payments(${storeId})`),
+          run(sql<Array<{ at: Date; from_status: StoreStatus | null; to_status: StoreStatus; actor: string; admin_name: string | null; reason: string }>>`SELECT * FROM admin_billing_events(${storeId})`),
+        ])
+        const h = header[0]!
+        return {
+          storeId, status: h.status, grandfathered: h.grandfathered, plan: h.plan, trialEndsAt: iso(h.trial_ends_at), currentPeriodEnd: iso(h.current_period_end),
+          payments: pays.map(toPayment),
+          events: events.map((e) => ({ at: iso(e.at) as string, fromStatus: e.from_status, toStatus: e.to_status, actor: e.actor, adminName: e.admin_name, reason: e.reason })),
+        } satisfies TenantBilling
+      } catch (err) {
+        if (err instanceof DomainError && err.code === "not_found") return null
+        throw err
+      }
+    },
+    async recordPayment(i) {
+      try {
+        const r = (await run(sql<Array<{ payment_id: string; replayed: boolean; from_status: StoreStatus; to_status: StoreStatus }>>`
+          SELECT * FROM admin_payment_record(${i.storeId}, ${i.idempotencyKey}, ${i.amountPoisha}, ${i.method}, ${i.txnRef}, ${i.paidAt}, ${i.planId}, ${i.adminId})`))[0]!
+        const p = (await run(sql<PaymentRow[]>`SELECT * FROM admin_payment_get(${r.payment_id})`))[0]!
+        return { payment: toPayment(p), replayed: r.replayed, fromStatus: r.from_status, toStatus: r.to_status }
+      } catch (err) {
+        // tenant_not_found is the only "not found" that means "no such shop" here; a missing plan is a different error and must surface
+        if (err instanceof DomainError && err.code === "not_found" && /^Tenant/.test(err.message)) return null
+        throw err
+      }
+    },
+    async voidPayment({ paymentId, reason, adminId }) {
+      try {
+        const r = (await run(sql<Array<{ store_id: string }>>`SELECT * FROM admin_payment_void(${paymentId}, ${reason}, ${adminId})`))[0]!
+        const p = (await run(sql<PaymentRow[]>`SELECT * FROM admin_payment_get(${paymentId})`))[0]!
+        return { payment: toPayment(p), storeId: r.store_id }
+      } catch (err) {
+        if (err instanceof DomainError && err.code === "not_found") return null
+        throw err
+      }
+    },
+    async extendTrial({ storeId, days, reason, adminId }) {
+      try {
+        const r = (await run(sql<Array<{ trial_ends_at: Date; status: StoreStatus }>>`SELECT * FROM admin_trial_extend(${storeId}, ${days}, ${reason}, ${adminId})`))[0]!
+        return { trialEndsAt: iso(r.trial_ends_at) as string, status: r.status }
+      } catch (err) {
+        if (err instanceof DomainError && err.code === "not_found") return null
+        throw err
+      }
+    },
+    async billingOverview() {
+      const r = (await run(sql<Array<{
+        mrr_poisha: string; collected_poisha: string; payments_month: number; voided_poisha: string; grandfathered: number
+        by_status: Record<string, number>; trials: BillingOverview["trialsEndingSoon"]; overdue: BillingOverview["overdue"]; overdue_total: number
+      }>>`SELECT * FROM admin_billing_overview()`))[0]!
+      return {
+        mrrPoisha: Number(r.mrr_poisha), collectedThisMonthPoisha: Number(r.collected_poisha), paymentsThisMonth: r.payments_month,
+        voidedThisMonthPoisha: Number(r.voided_poisha), tenantsByStatus: r.by_status, grandfathered: r.grandfathered,
+        trialsEndingSoon: r.trials.map((t) => ({ ...t, trialEndsAt: iso(t.trialEndsAt) as string })),
+        overdue: r.overdue.map((o) => ({ ...o, dueAt: iso(o.dueAt) as string })), overdueTotal: r.overdue_total,
       }
     },
 

@@ -20,7 +20,9 @@ export const ADMIN_ACTIONS = {
   // health (A2): sync health, client errors, negative stock, dashboard tiles. Triage writes, so Viewer/Finance cannot.
   "health.read": ["super", "support", "finance", "viewer"],
   "health.triage": ["super", "support"],
-  // billing (A3+)
+  // billing (A3). Support and Viewer may LOOK at billing; only Finance and Super change it.
+  "billing.read": ["super", "support", "finance", "viewer"],
+  "billing.payment.void": ["super", "finance"],
   "billing.payment.record": ["super", "finance"],
   "billing.trial.extend": ["super", "finance"],
   "billing.plan.edit": ["super"],
@@ -42,6 +44,7 @@ const STEP_UP: ReadonlySet<AdminAction> = new Set<AdminAction>([
   "tenant.suspend",
   "tenant.export",
   "billing.plan.edit",
+  "billing.payment.void",
   "support.impersonate",
   "audit.export",
 ])

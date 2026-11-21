@@ -4,6 +4,13 @@
 -- Order for a rollback in production (docs/RUNBOOK.md): 1) deploy the previous API build (or revert the merge)
 -- 2) run this file 3) verify /health and a shop login. Old shop code runs fine on the schema this restores.
 BEGIN;
+-- newest first: 013 (tenant ops) depends on 012, so it must be rolled back first (db/rollback/013_down.sql, which itself requires 014 and 015 to be gone)
+DO $$
+BEGIN
+  IF to_regclass('public.tenant_notes') IS NOT NULL OR to_regclass('public.subscription_payments') IS NOT NULL THEN
+    RAISE EXCEPTION 'a newer admin migration (013/014/015) is still applied: roll back newest first' USING ERRCODE = 'P0001';
+  END IF;
+END $$;
 SET LOCAL lock_timeout = '5s';   -- DROP COLUMN on stores takes ACCESS EXCLUSIVE: fail fast instead of queueing every shop request
 
 -- Operator activity in the audit log is evidence. Refuse to destroy it silently: export it first, then re-run this file after

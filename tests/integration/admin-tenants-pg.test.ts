@@ -470,6 +470,7 @@ describe.skipIf(!ENABLED)("013 rollback (db/rollback/013_down.sql)", () => {
       const id = await seedStore(db.sup, { name: "Keep me", createdAt: new Date(), ownerPhone: "01711888001" })
       await db.sup`INSERT INTO tenant_notes (store_id, body) VALUES (${id}, 'important')`
       const down = await read("db", "rollback", "013_down.sql")
+      expect(await sqlCode(one.unsafe(await read("db", "rollback", "015_down.sql")))).toBe("ok") // newest first: 015 (billing, empty here) before 014
 
       // 014 (health) reads 013's stores.last_sync_at and plpgsql bodies are not dependency-tracked: 013_down refuses until 014 is rolled back (newest first)
       expect(await sqlCode(one.unsafe(down))).toBe("P0001")
