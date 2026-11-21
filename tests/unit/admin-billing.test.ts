@@ -331,11 +331,11 @@ describe("what the admin API never exposes", () => {
 
 describe("review fixes: backdating, reference spelling, replay signature, malformed input", () => {
   it("refuses a payment dated more than 30 days back (422 paid_too_old) and accepts one inside the window", async () => {
-    const { record } = await setup()
-    const old = await record(pay(1, { paidAt: new Date(Date.now() - 31 * DAY).toISOString() }))
+    const { h, record } = await setup()
+    const old = await record(pay(1, { paidAt: new Date(h.now() - 31 * DAY).toISOString() }))
     expect(old.status).toBe(422)
     expect(old.json.error.code).toBe("paid_too_old")
-    expect((await record(pay(2, { paidAt: new Date(Date.now() - 20 * DAY).toISOString() }))).status).toBe(201)
+    expect((await record(pay(2, { paidAt: new Date(h.now() - 20 * DAY).toISOString() }))).status).toBe(201)
   })
 
   it("a transaction reference is one thing however it is spelled: abc, ABC and ' ABC ' are duplicates", async () => {
@@ -348,8 +348,8 @@ describe("review fixes: backdating, reference spelling, replay signature, malfor
   })
 
   it("the same instant written two ways replays instead of conflicting", async () => {
-    const { record } = await setup()
-    const at = new Date(Date.now() - DAY)
+    const { h, record } = await setup()
+    const at = new Date(h.now() - DAY)
     const first = await record(pay(1, { paidAt: at.toISOString() }))
     expect(first.status).toBe(201)
     const again = await record(pay(1, { paidAt: at.toISOString().replace(".000Z", "Z").replace(/\.(\d{3})Z$/, ".$1Z") }))
